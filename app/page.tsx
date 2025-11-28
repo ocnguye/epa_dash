@@ -20,7 +20,25 @@ export default function LoginPage() {
             });
             const data = await res.json();
             if (data.success) {
-                router.push('/dash');
+                // After successful login, check role and route appropriately
+                try {
+                    const meRes = await fetch('/api/dashboard');
+                    if (meRes.ok) {
+                        const meJson = await meRes.json();
+                        const role = meJson?.user?.role;
+                        if (role === 'attending') {
+                            router.push('/admin');
+                        } else {
+                            router.push('/dash');
+                        }
+                    } else {
+                        // Fallback to trainee dashboard
+                        router.push('/dash');
+                    }
+                } catch (err) {
+                    // network or other error; fallback
+                    router.push('/dash');
+                }
             } else {
                 setError(data.message || 'Login failed');
             }

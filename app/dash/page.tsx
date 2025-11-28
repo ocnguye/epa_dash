@@ -126,6 +126,12 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [activeTab, setActiveTab] = useState('EPA TREND');
+    // Profile modal state
+    const [showProfileModal, setShowProfileModal] = useState(false);
+    const [profileForm, setProfileForm] = useState({ username: '', password: '', preferred_name: '', first_name: '', last_name: '', role: '', pgy: '' });
+    const [profileLoading, setProfileLoading] = useState(false);
+    const [profileError, setProfileError] = useState('');
+    const [profileSuccess, setProfileSuccess] = useState('');
 
     // Function to fetch dashboard data
     const fetchDashboard = async () => {
@@ -169,6 +175,78 @@ export default function Dashboard() {
             }
         } catch (error) {
             console.error('Failed to update status:', error);
+        }
+    };
+
+    // Open profile modal and prefill form from user state
+    const openProfileModal = () => {
+        setProfileError('');
+        setProfileSuccess('');
+        setProfileForm({
+            username: (user as any)?.username ?? '',
+            password: '',
+            preferred_name: (user as any)?.preferred_name ?? '',
+            first_name: (user as any)?.first_name ?? '',
+            last_name: (user as any)?.last_name ?? '',
+            role: (user as any)?.role ?? '',
+            pgy: typeof (user as any)?.pgy !== 'undefined' && (user as any)?.pgy !== null ? String((user as any).pgy) : '',
+        });
+        setShowProfileModal(true);
+    };
+
+    const closeProfileModal = () => {
+        setShowProfileModal(false);
+        setProfileLoading(false);
+        setProfileError('');
+        setProfileSuccess('');
+    };
+
+    const submitProfileUpdate = async (e?: React.FormEvent) => {
+        e?.preventDefault();
+        setProfileError('');
+        setProfileSuccess('');
+
+        // basic client-side validation
+        if (profileForm.password && profileForm.password.length > 0 && profileForm.password.length < 8) {
+            setProfileError('Password must be at least 8 characters');
+            return;
+        }
+
+        setProfileLoading(true);
+            try {
+            const payload: any = {};
+            if (profileForm.username && profileForm.username !== (user as any)?.username) payload.username = profileForm.username;
+            if (profileForm.password) payload.password = profileForm.password;
+            if (typeof profileForm.preferred_name !== 'undefined') payload.preferred_name = profileForm.preferred_name;
+            if (typeof profileForm.first_name !== 'undefined' && profileForm.first_name !== (user as any)?.first_name) payload.first_name = profileForm.first_name;
+            if (typeof profileForm.last_name !== 'undefined' && profileForm.last_name !== (user as any)?.last_name) payload.last_name = profileForm.last_name;
+            if (typeof profileForm.pgy !== 'undefined') {
+                const pgyVal = profileForm.pgy === '' ? undefined : Number(profileForm.pgy);
+                if (typeof pgyVal !== 'undefined' && Number.isInteger(pgyVal)) payload.pgy = pgyVal;
+            }
+            // only include role if user is admin (server will also enforce this)
+            if (typeof profileForm.role !== 'undefined' && (user as any)?.role === 'admin' && profileForm.role !== (user as any)?.role) payload.role = profileForm.role;
+
+            const res = await fetch('/api/user', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                setProfileError(data?.message || 'Failed to update profile');
+            } else {
+                setProfileSuccess(data?.message || 'Profile updated');
+                // refresh dashboard user info
+                await fetchDashboard();
+                // close automatically after a short delay
+                setTimeout(() => closeProfileModal(), 900);
+            }
+        } catch (err: any) {
+            setProfileError(err?.message || 'Server error');
+        } finally {
+            setProfileLoading(false);
         }
     };
 
@@ -365,8 +443,13 @@ export default function Dashboard() {
                         <div style={{ color: '#666', fontSize: 16 }}>
                             {user ? (
                                 <>
-                                    <strong>{`${user.role?.charAt(0).toUpperCase() + user.role?.slice(1)}:`}</strong>
-                                    <span>{` ${user.first_name} ${user.last_name}`}</span>
+                                    {/* Display for trainee-focused dashboard */}
+                                    <strong>Trainee:</strong>
+                                    {/* Prefer the preferred_name when non-empty, otherwise fall back to first + last */}
+                                    <span>{` ${((user as any)?.preferred_name && String((user as any).preferred_name).trim()) ? String((user as any).preferred_name).trim() : `${user.first_name} ${user.last_name}`}`}</span>
+                                    <span>{' | '}</span>
+                                    <strong>PGY:</strong>
+                                    <span>{` ${(user as any)?.pgy != null ? (user as any).pgy : ''}`}</span>
                                     <span>{' | '}</span>
                                     <strong>Specialty:</strong>
                                     <span>{` ${user.specialty ?? 'Interventional Radiology'}`}</span>
@@ -377,51 +460,79 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    {/* Logout Button */}
-                    <button
-                        onClick={() => router.push('/')}
-                        style={{
-                            background: 'linear-gradient(135deg, #ff6b6b, #ee5a52)',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 8,
-                            padding: '12px 24px',
-                            fontSize: 14,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            boxShadow: '0 2px 4px rgba(238, 90, 82, 0.3)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            flexShrink: 0,
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'translateY(-1px)';
-                            e.currentTarget.style.boxShadow = '0 4px 8px rgba(238, 90, 82, 0.4)';
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(238, 90, 82, 0.3)';
-                        }}
-                        title="Sign out of your account"
-                    >
-                        <svg 
-                            width="16" 
-                            height="16" 
-                            viewBox="0 0 24 24" 
-                            fill="none" 
-                            stroke="currentColor" 
-                            strokeWidth="2" 
-                            strokeLinecap="round" 
-                            strokeLinejoin="round"
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <button
+                            onClick={openProfileModal}
+                            style={{
+                                background: '#fff',
+                                color: '#374151',
+                                border: '1px solid rgba(55,65,81,0.08)',
+                                borderRadius: 8,
+                                padding: '10px 18px',
+                                fontSize: 14,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.12s ease',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                            }}
+                            title="Edit your account"
                         >
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                            <polyline points="16,17 21,12 16,7"/>
-                            <line x1="21" y1="12" x2="9" y2="12"/>
-                        </svg>
-                        Logout
-                    </button>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                            </svg>
+                            Edit Profile
+                        </button>
+
+                        {/* Logout Button */}
+                        <button
+                            onClick={() => router.push('/')}
+                            style={{
+                                background: 'linear-gradient(135deg, #ff6b6b, #ee5a52)',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 8,
+                                padding: '12px 24px',
+                                fontSize: 14,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                                boxShadow: '0 2px 4px rgba(238, 90, 82, 0.3)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                flexShrink: 0,
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.transform = 'translateY(-1px)';
+                                e.currentTarget.style.boxShadow = '0 4px 8px rgba(238, 90, 82, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.transform = 'translateY(0)';
+                                e.currentTarget.style.boxShadow = '0 2px 4px rgba(238, 90, 82, 0.3)';
+                            }}
+                            title="Sign out of your account"
+                        >
+                            <svg 
+                                width="16" 
+                                height="16" 
+                                viewBox="0 0 24 24" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                strokeWidth="2" 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round"
+                            >
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                                <polyline points="16,17 21,12 16,7"/>
+                                <line x1="21" y1="12" x2="9" y2="12"/>
+                            </svg>
+                            Logout
+                        </button>
+                    </div>
                 </div>
 
                 
@@ -759,6 +870,108 @@ export default function Dashboard() {
                         </div>
                     </div>
                 </div>
+                {/* Profile Edit Modal */}
+                {showProfileModal && (
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                        <div style={{ width: 520, background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,0.3)', maxWidth: '95%' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Edit Profile</h3>
+                                <button onClick={closeProfileModal} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer', color: '#888' }} title="Close">×</button>
+                            </div>
+
+                            <form onSubmit={submitProfileUpdate}>
+                                <div style={{ display: 'grid', gap: 12 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                        <label style={{ fontSize: 13, color: '#333' }}>
+                                            First name
+                                            <input
+                                                value={profileForm.first_name}
+                                                onChange={(e) => setProfileForm(prev => ({ ...prev, first_name: e.target.value }))}
+                                                style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }}
+                                                placeholder="First name"
+                                            />
+                                        </label>
+
+                                        <label style={{ fontSize: 13, color: '#333' }}>
+                                            Last name
+                                            <input
+                                                value={profileForm.last_name}
+                                                onChange={(e) => setProfileForm(prev => ({ ...prev, last_name: e.target.value }))}
+                                                style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }}
+                                                placeholder="Last name"
+                                            />
+                                        </label>
+                                    </div>
+
+                                    <label style={{ fontSize: 13, color: '#333' }}>
+                                        Username
+                                        <input
+                                            value={profileForm.username}
+                                            onChange={(e) => setProfileForm(prev => ({ ...prev, username: e.target.value }))}
+                                            style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }}
+                                            placeholder="username"
+                                        />
+                                    </label>
+
+                                    <label style={{ fontSize: 13, color: '#333' }}>
+                                        New password (leave blank to keep current)
+                                        <input
+                                            type="password"
+                                            value={profileForm.password}
+                                            onChange={(e) => setProfileForm(prev => ({ ...prev, password: e.target.value }))}
+                                            style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }}
+                                            placeholder="new password"
+                                        />
+                                    </label>
+
+                                    {/* Role and PGY are only shown to attending users (this page is for trainees) */}
+                                    {((user as any)?.role === 'attending') && (
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                            <label style={{ fontSize: 13, color: '#333' }}>
+                                                Role
+                                                <input
+                                                    value={profileForm.role}
+                                                    onChange={(e) => setProfileForm(prev => ({ ...prev, role: e.target.value }))}
+                                                    style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }}
+                                                    placeholder="role"
+                                                />
+                                            </label>
+
+                                            <label style={{ fontSize: 13, color: '#333' }}>
+                                                PGY
+                                                <input
+                                                    value={profileForm.pgy}
+                                                    onChange={(e) => setProfileForm(prev => ({ ...prev, pgy: e.target.value }))}
+                                                    style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }}
+                                                    placeholder="PGY (numeric)"
+                                                    inputMode="numeric"
+                                                />
+                                            </label>
+                                        </div>
+                                    )}
+
+                                    <label style={{ fontSize: 13, color: '#333' }}>
+                                        Preferred / display name
+                                        <input
+                                            value={profileForm.preferred_name}
+                                            onChange={(e) => setProfileForm(prev => ({ ...prev, preferred_name: e.target.value }))}
+                                            style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }}
+                                            placeholder="Preferred name"
+                                        />
+                                    </label>
+
+                                    {profileError && <div style={{ color: '#b91c1c', fontSize: 13 }}>{profileError}</div>}
+                                    {profileSuccess && <div style={{ color: '#166534', fontSize: 13 }}>{profileSuccess}</div>}
+
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+                                        <button type="button" onClick={closeProfileModal} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e6e6e6', background: '#fff', cursor: 'pointer' }}>Cancel</button>
+                                        <button type="submit" disabled={profileLoading} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff', cursor: 'pointer' }}>{profileLoading ? 'Saving...' : 'Save'}</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

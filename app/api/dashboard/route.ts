@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
         // Get the logged-in user from the `users` table in the powerscribe DB.
         // We keep this simple and only pull fields we need.
         const [userRows] = await connection.execute(
-            `SELECT user_id, first_name, last_name, role, username
+            `SELECT user_id, first_name, last_name, role, username, preferred_name, pgy
              FROM users
              WHERE username = ?`,
             [username]
@@ -28,8 +28,18 @@ export async function GET(req: NextRequest) {
             await connection.end();
             return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
         }
-        const user = userRows[0] as { user_id: number; first_name: string; last_name: string; role: string; username: string };
-        const user_id = user.user_id;
+        const rawUser = userRows[0] as any;
+        // Normalize and return only safe fields so frontend receives trimmed values
+        const user = {
+            user_id: Number(rawUser.user_id),
+            username: rawUser.username,
+            first_name: rawUser.first_name ?? null,
+            last_name: rawUser.last_name ?? null,
+            preferred_name: rawUser.preferred_name ? String(rawUser.preferred_name).trim() : null,
+            role: rawUser.role ?? null,
+            pgy: typeof rawUser.pgy !== 'undefined' && rawUser.pgy !== null ? Number(rawUser.pgy) : null,
+        };
+        const user_id = Number(user.user_id);
 
         // Recent reports for this trainee in the powerscribe `reports` table.
         // We also compute a per-report `seek_feedback` status for this trainee by
@@ -108,11 +118,7 @@ export async function GET(req: NextRequest) {
 
         await connection.end();
 
-        return NextResponse.json({
-            user,
-            procedures,
-            stats: formattedStats,
-        });
+        return NextResponse.json({ user, procedures, stats: formattedStats });
     } catch (error) {
         console.error('Dashboard API error:', error);
         return NextResponse.json({ success: false, message: 'Server error', error: (error as Error).message }, { status: 500 });

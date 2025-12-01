@@ -19,7 +19,13 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 export default function AdminCohortChart({ trainees }: { trainees: Trainee[] }) {
     const cohortChart = useMemo(() => {
         const list = trainees.slice();
-        const labels = list.map(t => t.preferred_name ? t.preferred_name : `${t.first_name ?? ''} ${t.last_name ?? ''}`.trim());
+        const labels = list.map(t => {
+            const preferred = t.preferred_name && String(t.preferred_name).trim() ? String(t.preferred_name).trim() : undefined;
+            const first = t.first_name && String(t.first_name).trim() ? String(t.first_name).trim() : '';
+            const last = t.last_name && String(t.last_name).trim() ? String(t.last_name).trim() : '';
+            const given = preferred ?? first;
+            return `${given}${last ? ' ' + last : ''}`.trim();
+        });
         const data = list.map(t => {
             const n = Number(t.avg_epa);
             return Number.isFinite(n) ? n : 0;
@@ -58,7 +64,7 @@ export default function AdminCohortChart({ trainees }: { trainees: Trainee[] }) 
             maintainAspectRatio: false,
             plugins: {
                 legend: { display: false },
-                title: { display: true, text: 'Cohort EPA Comparison' },
+                title: { display: false },
                 tooltip: {
                     backgroundColor: 'rgba(0,0,0,0.8)',
                     titleColor: '#fff',

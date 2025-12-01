@@ -128,7 +128,7 @@ export default function Dashboard() {
     const [activeTab, setActiveTab] = useState('EPA TREND');
     // Profile modal state
     const [showProfileModal, setShowProfileModal] = useState(false);
-    const [profileForm, setProfileForm] = useState({ username: '', password: '', preferred_name: '', first_name: '', last_name: '', role: '', pgy: '' });
+    const [profileForm, setProfileForm] = useState({ username: '', password: '', confirm_password: '', preferred_name: '', first_name: '', last_name: '', role: '', pgy: '' });
     const [profileLoading, setProfileLoading] = useState(false);
     const [profileError, setProfileError] = useState('');
     const [profileSuccess, setProfileSuccess] = useState('');
@@ -185,6 +185,7 @@ export default function Dashboard() {
         setProfileForm({
             username: (user as any)?.username ?? '',
             password: '',
+            confirm_password: '',
             preferred_name: (user as any)?.preferred_name ?? '',
             first_name: (user as any)?.first_name ?? '',
             last_name: (user as any)?.last_name ?? '',
@@ -210,6 +211,13 @@ export default function Dashboard() {
         if (profileForm.password && profileForm.password.length > 0 && profileForm.password.length < 8) {
             setProfileError('Password must be at least 8 characters');
             return;
+        }
+        // If a new password was supplied, ensure confirmation matches
+        if (profileForm.password && profileForm.password.length > 0) {
+            if ((profileForm.confirm_password ?? '') !== profileForm.password) {
+                setProfileError('New password and confirmation do not match');
+                return;
+            }
         }
 
         setProfileLoading(true);
@@ -446,7 +454,7 @@ export default function Dashboard() {
                                     {/* Display for trainee-focused dashboard */}
                                     <strong>Trainee:</strong>
                                     {/* Prefer the preferred_name when non-empty, otherwise fall back to first + last */}
-                                    <span>{` ${((user as any)?.preferred_name && String((user as any).preferred_name).trim()) ? String((user as any).preferred_name).trim() : `${user.first_name} ${user.last_name}`}`}</span>
+                                    <span>{` ${((user as any)?.preferred_name && String((user as any).preferred_name).trim()) ? String((user as any).preferred_name).trim() : user.first_name} ${user.last_name}`}</span>
                                     <span>{' | '}</span>
                                     <strong>PGY:</strong>
                                     <span>{` ${(user as any)?.pgy != null ? (user as any).pgy : ''}`}</span>
@@ -479,6 +487,14 @@ export default function Dashboard() {
                                 gap: 8,
                             }}
                             title="Edit your account"
+                            onMouseEnter={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
+                                (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 8px rgba(0,0,0,0.08)';
+                            }}
+                            onMouseLeave={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                                (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)';
+                            }}
                         >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M12 20h9" />
@@ -493,26 +509,26 @@ export default function Dashboard() {
                             style={{
                                 background: 'linear-gradient(135deg, #ff6b6b, #ee5a52)',
                                 color: '#fff',
-                                border: 'none',
+                                border: '1px solid rgba(55,65,81,0.08)',
                                 borderRadius: 8,
-                                padding: '12px 24px',
+                                padding: '10px 18px',
                                 fontSize: 14,
                                 fontWeight: 600,
                                 cursor: 'pointer',
-                                transition: 'all 0.2s ease',
-                                boxShadow: '0 2px 4px rgba(238, 90, 82, 0.3)',
+                                transition: 'all 0.12s ease',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: 8,
                                 flexShrink: 0,
                             }}
                             onMouseEnter={(e) => {
-                                e.currentTarget.style.transform = 'translateY(-1px)';
-                                e.currentTarget.style.boxShadow = '0 4px 8px rgba(238, 90, 82, 0.4)';
+                                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
+                                (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 8px rgba(238, 90, 82, 0.4)';
                             }}
                             onMouseLeave={(e) => {
-                                e.currentTarget.style.transform = 'translateY(0)';
-                                e.currentTarget.style.boxShadow = '0 2px 4px rgba(238, 90, 82, 0.3)';
+                                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                                (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)';
                             }}
                             title="Sign out of your account"
                         >
@@ -875,7 +891,7 @@ export default function Dashboard() {
                     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
                         <div style={{ width: 520, background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,0.3)', maxWidth: '95%' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Edit Profile</h3>
+                                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#374151' }}>Edit Profile</h3>
                                 <button onClick={closeProfileModal} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer', color: '#888' }} title="Close">×</button>
                             </div>
 
@@ -914,13 +930,25 @@ export default function Dashboard() {
                                     </label>
 
                                     <label style={{ fontSize: 13, color: '#333' }}>
-                                        New password (leave blank to keep current)
+                                        New password
+                                        <span style={{ color: '#9ca3af', fontSize: 12, marginLeft: 6 }}>(leave blank to keep current)</span>
                                         <input
                                             type="password"
                                             value={profileForm.password}
                                             onChange={(e) => setProfileForm(prev => ({ ...prev, password: e.target.value }))}
                                             style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }}
                                             placeholder="new password"
+                                        />
+                                    </label>
+
+                                    <label style={{ fontSize: 13, color: '#333' }}>
+                                        Confirm new password
+                                        <input
+                                            type="password"
+                                            value={profileForm.confirm_password}
+                                            onChange={(e) => setProfileForm(prev => ({ ...prev, confirm_password: e.target.value }))}
+                                            style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }}
+                                            placeholder="confirm new password"
                                         />
                                     </label>
 

@@ -1,18 +1,18 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
 import ProgressCircle from '../../../../components/ProgressCircle';
 import { epaTrendOptions, procedureSpecificOptions } from '../../../../components/ChartConfigs';
 
-type Props = { params: { id: string } };
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
 
-export default function TraineePage({ params }: Props) {
-  // `params` may be a Promise in newer Next.js versions; resolve it safely.
+export default function TraineePage() {
+  // useParams() is the client-safe way to read dynamic route params in a client component
+  const params = useParams();
   const router = useRouter();
   const [resolvedId, setResolvedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,21 +22,9 @@ export default function TraineePage({ params }: Props) {
   const [stats, setStats] = useState<any>(null);
 
   useEffect(() => {
-    let mounted = true;
-    const resolveParams = async () => {
-      try {
-        if (params && typeof (params as any).then === 'function') {
-          const p = await (params as any);
-          if (mounted) setResolvedId(String(p.id));
-        } else if (params && (params as any).id) {
-          if (mounted) setResolvedId(String((params as any).id));
-        }
-      } catch (e) {
-        console.error('Failed to resolve params', e);
-      }
-    };
-    resolveParams();
-    return () => { mounted = false; };
+    // params from useParams() will be an object like { id: string }
+    if (!params || !(params as any).id) return;
+    setResolvedId(String((params as any).id));
   }, [params]);
 
   useEffect(() => {

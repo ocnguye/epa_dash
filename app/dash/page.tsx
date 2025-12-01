@@ -112,6 +112,13 @@ const getStatusDescription = (status: string) => {
     }
 };
 
+// helper to truncate long text
+const truncateText = (txt?: string | null, n = 40) => {
+    if (!txt) return '';
+    const s = String(txt).trim();
+    return s.length > n ? s.slice(0, n - 1).trim() + '…' : s;
+};
+
 /* Dashboard Component */
 export default function Dashboard() {
     const router = useRouter();
@@ -126,7 +133,13 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [activeTab, setActiveTab] = useState('EPA TREND');
-        const [timeframe, setTimeframe] = useState<'last_month' | 'last_year' | 'all'>('all');
+        const [timeframe, setTimeframe] = useState<'last_month' | 'last_6_months' | 'last_year' | 'all'>('all');
+    // procedure filter for EPA Trend
+    const [selectedProcedure, setSelectedProcedure] = useState<string>('all');
+    // PROCEDURE COUNTS view timeframe (monthly / annual)
+    const [countsGranularity, setCountsGranularity] = useState<'monthly' | 'annual'>('monthly');
+    // selected procedure for the PROCEDURE COUNTS view (separate from the EPA TREND filter)
+    const [countsSelectedProcedure, setCountsSelectedProcedure] = useState<string>('all');
     // Profile modal state
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ username: '', password: '', confirm_password: '', preferred_name: '', first_name: '', last_name: '', role: '', pgy: '' });
@@ -273,32 +286,123 @@ export default function Dashboard() {
         if (!procedures || procedures.length === 0) return [] as Procedure[];
         if (timeframe === 'all') return procedures;
         const now = new Date();
-        const cutoff = timeframe === 'last_month'
-            ? new Date(now.getTime() - 1000 * 60 * 60 * 24 * 30)
-            : new Date(now.getTime() - 1000 * 60 * 60 * 24 * 365);
+        let cutoff: Date;
+        if (timeframe === 'last_month') {
+            cutoff = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 30);
+        } else if (timeframe === 'last_6_months') {
+            cutoff = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 30 * 6);
+        } else {
+            // last_year
+            cutoff = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 365);
+        }
         return procedures.filter(p => {
             const d = new Date(p.create_date);
             return d >= cutoff;
         });
     }, [procedures, timeframe]);
 
-    const chartData = useMemo(() => {
-        if (!filteredProcedures.length) return null;
+    // Procedure options (code or description) for the procedure filter dropdown
+    const procedureOptions = useMemo(() => {
+        const map: Record<string, string> = {};
+        procedures.forEach(p => {
+            const key = (p.proc_code && String(p.proc_code).trim()) || (p.proc_desc && String(p.proc_desc).trim()) || 'Unknown';
+            if (!map[key]) {
+                // label: always use an abbreviated/truncated procedure description where possible
+                const label = truncateText(p.proc_desc || p.proc_code || 'Unknown', 40);
+                map[key] = label;
+            }
+        });
+        const entries = Object.keys(map).map(k => ({ key: k, label: map[k] }));
+        // sort alphabetically by label
+        entries.sort((a, b) => a.label.localeCompare(b.label));
+        return entries;
+    }, [procedures]);
 
-        // EPA Trend Data - chronological order
-        const sortedProcedures = [...filteredProcedures].sort((a, b) => new Date(a.create_date).getTime() - new Date(b.create_date).getTime());
-        const epaTrendData = {
-            labels: sortedProcedures.map(proc => {
+    // procedures after applying the procedure-type filter (in addition to timeframe)
+    const displayProcedures = useMemo(() => {
+        if (!filteredProcedures || filteredProcedures.length === 0) return [] as Procedure[];
+        if (!selectedProcedure || selectedProcedure === 'all') return filteredProcedures;
+        return filteredProcedures.filter(p => {
+            const key = (p.proc_code && String(p.proc_code).trim()) || (p.proc_desc && String(p.proc_desc).trim()) || 'Unknown';
+            return key === selectedProcedure;
+        });
+    }, [filteredProcedures, selectedProcedure]);
+
+    const chartData = useMemo(() => {
+    if (!displayProcedures.length) return null;
+    // EPA Trend Data - chronological order
+    const sortedProcedures = [...displayProcedures].sort((a, b) => new Date(a.create_date).getTime() - new Date(b.create_date).getTime());
+
+        // Helper formatters
+        const fmtDay = (d: Date) => d.toISOString().slice(0, 10); // YYYY-MM-DD
+        const dayLabel = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+        const monthLabel = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+        let epaLabels: string[] = [];
+        let epaData: Array<number | null> = [];
+
+        if (timeframe === 'all') {
+            epaLabels = sortedProcedures.map(proc => {
                 const date = new Date(proc.create_date);
-                return date.toLocaleDateString('en-US', { 
-                    month: 'short', 
-                    day: 'numeric' 
+                return dayLabel(date);
+            });
+            epaData = sortedProcedures.map(proc => proc.oepa);
+        } else {
+            // build buckets depending on timeframe
+            const now = new Date();
+            let buckets: string[] = [];
+            if (timeframe === 'last_month') {
+                // last 30 days
+                for (let i = 29; i >= 0; i--) {
+                    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+                    buckets.push(fmtDay(d));
+                }
+                // aggregate by day
+                const map: Record<string, { sum: number; count: number }> = {};
+                sortedProcedures.forEach(p => {
+                    const k = fmtDay(new Date(p.create_date));
+                    if (!map[k]) map[k] = { sum: 0, count: 0 };
+                    const v = Number(p.oepa);
+                    if (Number.isFinite(v)) { map[k].sum += v; map[k].count += 1; }
                 });
-            }),
+                epaLabels = buckets.map(d => {
+                    const parts = d.split('-');
+                    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+                    return dayLabel(date);
+                });
+                epaData = buckets.map(k => map[k] && map[k].count ? Number((map[k].sum / map[k].count).toFixed(2)) : null);
+            } else if (timeframe === 'last_6_months' || timeframe === 'last_year') {
+                // months window
+                const months = timeframe === 'last_6_months' ? 6 : 12;
+                for (let i = months - 1; i >= 0; i--) {
+                    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                    buckets.push(monthKey(d));
+                }
+                // aggregate by month
+                const map: Record<string, { sum: number; count: number }> = {};
+                sortedProcedures.forEach(p => {
+                    const date = new Date(p.create_date);
+                    const k = monthKey(date);
+                    if (!map[k]) map[k] = { sum: 0, count: 0 };
+                    const v = Number(p.oepa);
+                    if (Number.isFinite(v)) { map[k].sum += v; map[k].count += 1; }
+                });
+                epaLabels = buckets.map(k => {
+                    const [y, m] = k.split('-');
+                    const d = new Date(Number(y), Number(m) - 1, 1);
+                    return monthLabel(d);
+                });
+                epaData = buckets.map(k => map[k] && map[k].count ? Number((map[k].sum / map[k].count).toFixed(2)) : null);
+            }
+        }
+
+        const epaTrendData = {
+            labels: epaLabels,
             datasets: [
                 {
                     label: 'EPA Score',
-                    data: sortedProcedures.map(proc => proc.oepa),
+                    data: epaData,
                     borderColor: '#afd5f0',
                     backgroundColor: 'rgba(74, 144, 226, 0.1)',
                     borderWidth: 3,
@@ -383,11 +487,91 @@ export default function Dashboard() {
             complexityVsEpa: complexityVsEpaData,
             procedureSpecific: procedureSpecificData
         };
-    }, [filteredProcedures]);
+    }, [displayProcedures, filteredProcedures, timeframe]);
+
+    // procedure counts (monthly or annual) computed from all procedures and filtered by selectedProcedure
+    const procedureCounts = useMemo(() => {
+        const src = procedures || [];
+        const filtered = countsSelectedProcedure && countsSelectedProcedure !== 'all'
+            ? src.filter(p => {
+                const key = (p.proc_code && String(p.proc_code).trim()) || (p.proc_desc && String(p.proc_desc).trim()) || 'Unknown';
+                return key === countsSelectedProcedure;
+            })
+            : src;
+
+        const now = new Date();
+        if (countsGranularity === 'monthly') {
+            // last 12 months keys YYYY-MM and display labels like 'October 2025'
+            const keys: string[] = [];
+            const displayLabels: string[] = [];
+            for (let i = 11; i >= 0; i--) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                keys.push(key);
+                displayLabels.push(d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
+            }
+            const counts = keys.map(() => 0);
+            const mapIndex: Record<string, number> = {};
+            keys.forEach((k, idx) => mapIndex[k] = idx);
+            filtered.forEach(p => {
+                const d = new Date(p.create_date);
+                if (isNaN(d.getTime())) return;
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                if (mapIndex[key] !== undefined) counts[mapIndex[key]] += 1;
+            });
+            return { labels: keys, counts, displayLabels };
+        } else {
+            // annual: last 5 years (display label same as key)
+            const labels: string[] = [];
+            const displayLabels: string[] = [];
+            const years = 5;
+            for (let i = years - 1; i >= 0; i--) {
+                const y = now.getFullYear() - i;
+                labels.push(String(y));
+                displayLabels.push(String(y));
+            }
+            const counts = labels.map(() => 0);
+            const mapIndex: Record<string, number> = {};
+            labels.forEach((l, idx) => mapIndex[l] = idx);
+            filtered.forEach(p => {
+                const d = new Date(p.create_date);
+                if (isNaN(d.getTime())) return;
+                const key = String(d.getFullYear());
+                if (mapIndex[key] !== undefined) counts[mapIndex[key]] += 1;
+            });
+            return { labels, counts, displayLabels };
+        }
+    }, [procedures, countsSelectedProcedure, countsGranularity]);
+
+    // dynamic EPA chart options adjusted based on selected timeframe
+    const epaOptions = useMemo(() => {
+        // clone base options to avoid mutating imported config
+        const base: any = JSON.parse(JSON.stringify(epaTrendOptions));
+        let maxTicksLimit = 12;
+        if (timeframe === 'last_month') maxTicksLimit = 10;
+        else if (timeframe === 'last_6_months') maxTicksLimit = 8;
+        else if (timeframe === 'last_year') maxTicksLimit = 6;
+
+        base.scales = base.scales || {};
+        base.scales.x = {
+            ...(base.scales.x || {}),
+            ticks: {
+                ...(base.scales.x?.ticks || {}),
+                autoSkip: true,
+                maxTicksLimit,
+                maxRotation: 45,
+                minRotation: 0,
+            }
+        };
+
+        // For longer time windows, shorten label text where possible by keeping month and day only
+        base.plugins = base.plugins || {};
+        return base as any;
+    }, [timeframe]);
 
 
     const renderChart = () => {
-        if (loading || !chartData) {
+        if (loading) {
             return (
                 <div style={{
                     height: 280,
@@ -405,11 +589,26 @@ export default function Dashboard() {
             );
         }
 
+        if (!chartData) {
+            return (
+                <div style={{
+                    height: 280,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#6b7280',
+                    fontSize: 16,
+                }}>
+                    No data to display for the selected timeframe
+                </div>
+            );
+        }
+
         switch (activeTab) {
             case 'EPA TREND':
                 return (
                     <div style={{ height: 280 }}>
-                        <Line data={chartData.epaTrend} options={epaTrendOptions} />
+                        <Line data={chartData.epaTrend} options={epaOptions} />
                     </div>
                 );
             case 'COMPLEXITY VS EPA':
@@ -422,6 +621,36 @@ export default function Dashboard() {
                 return (
                     <div style={{ height: 280 }}>
                         <Bar data={chartData.procedureSpecific} options={procedureSpecificOptions} />
+                    </div>
+                );
+            case 'PROCEDURE COUNTS':
+                return (
+                    <div style={{ background: '#fff', padding: 16, borderRadius: 8 }}>
+                        
+
+                        <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid rgba(175,213,240,0.2)', borderRadius: 6, background: 'rgba(175,213,240,0.02)' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', color: '#0f172a' }}>
+                                <thead style={{ background: 'rgba(175,213,240,0.08)', color: '#0f172a' }}>
+                                    <tr>
+                                        <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid rgba(175,213,240,0.2)', color: '#0f172a', fontWeight: 700 }}>{countsGranularity === 'monthly' ? 'Month' : 'Year'}</th>
+                                        <th style={{ padding: '8px 12px', textAlign: 'right', borderBottom: '1px solid rgba(175,213,240,0.2)', color: '#0f172a', fontWeight: 700 }}>Count</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {procedureCounts.labels.map((lbl, idx) => {
+                                        const display = (procedureCounts as any).displayLabels && (procedureCounts as any).displayLabels[idx]
+                                            ? (procedureCounts as any).displayLabels[idx]
+                                            : lbl;
+                                        return (
+                                            <tr key={lbl} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                <td style={{ padding: '8px 12px' }}>{display}</td>
+                                                <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>{procedureCounts.counts[idx] || 0}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 );
             default:
@@ -645,8 +874,142 @@ export default function Dashboard() {
                                 zIndex: 5,
                                 marginTop: 32,
                             }}>
-                                <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 16, color: '#000'}}>
-                                    {activeTab}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                    <div style={{ fontWeight: 700, fontSize: 18, color: '#000' }}>{activeTab}</div>
+                                    {/* Timeframe filter for EPA Trend chart */}
+                                    {activeTab === 'EPA TREND' && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <label htmlFor="procedure-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Procedure</label>
+                                                <div style={{ position: 'relative', display: 'inline-block' }}>
+                                                    <select
+                                                        id="procedure-select"
+                                                        value={selectedProcedure}
+                                                        onChange={(e) => setSelectedProcedure(e.target.value)}
+                                                        style={{
+                                                            padding: '6px 34px 6px 10px',
+                                                            borderRadius: 8,
+                                                            border: '1px solid rgba(0, 0, 0, 0.3)',
+                                                            background: 'rgba(175,213,240,0.06)',
+                                                            fontWeight: 600,
+                                                            cursor: 'pointer',
+                                                            color: 'rgba(0, 0, 0, 0.6)',
+                                                            fontSize: 13,
+                                                            WebkitAppearance: 'none',
+                                                            MozAppearance: 'none',
+                                                            appearance: 'none'
+                                                        }}
+                                                    >
+                                                        <option value="all">All procedures</option>
+                                                        {procedureOptions.map(opt => (
+                                                            <option key={opt.key} value={opt.key}>{opt.label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <label htmlFor="timeframe-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Timeframe</label>
+                                                <div style={{ position: 'relative', display: 'inline-block' }}>
+                                                    <select
+                                                        id="timeframe-select"
+                                                        value={timeframe}
+                                                        onChange={(e) => setTimeframe(e.target.value as 'last_month' | 'last_6_months' | 'last_year' | 'all')}
+                                                        style={{
+                                                            padding: '6px 34px 6px 10px',
+                                                            borderRadius: 8,
+                                                            border: '1px solid rgba(0, 0, 0, 0.3)',
+                                                            background: 'rgba(175,213,240,0.06)',
+                                                            fontWeight: 600,
+                                                            cursor: 'pointer',
+                                                            color: 'rgba(0, 0, 0, 0.6)',
+                                                            fontSize: 13,
+                                                            WebkitAppearance: 'none',
+                                                            MozAppearance: 'none',
+                                                            appearance: 'none'
+                                                        }}
+                                                    >
+                                                        <option value="last_month">Last month</option>
+                                                        <option value="last_6_months">Last 6 months</option>
+                                                        <option value="last_year">Last year</option>
+                                                        <option value="all">All</option>
+                                                    </select>
+                                                    <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeTab === 'PROCEDURE COUNTS' && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <label htmlFor="proc-counts-procedure-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Procedure</label>
+                                                <div style={{ position: 'relative', display: 'inline-block' }}>
+                                                    <select
+                                                        id="proc-counts-procedure-select"
+                                                        value={countsSelectedProcedure}
+                                                        onChange={(e) => setCountsSelectedProcedure(e.target.value)}
+                                                        style={{
+                                                            padding: '6px 34px 6px 10px',
+                                                            borderRadius: 8,
+                                                            border: '1px solid rgba(0, 0, 0, 0.3)',
+                                                            background: 'rgba(175,213,240,0.06)',
+                                                            fontWeight: 600,
+                                                            cursor: 'pointer',
+                                                            color: 'rgba(0, 0, 0, 0.6)',
+                                                            fontSize: 13,
+                                                            WebkitAppearance: 'none',
+                                                            MozAppearance: 'none',
+                                                            appearance: 'none'
+                                                        }}
+                                                    >
+                                                        <option value="all">All procedures</option>
+                                                        {procedureOptions.map(opt => (
+                                                            <option key={opt.key} value={opt.key}>{opt.label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                <label htmlFor="counts-timeframe-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Timeframe</label>
+                                                <div style={{ position: 'relative', display: 'inline-block' }}>
+                                                    <select
+                                                        id="counts-timeframe-select"
+                                                        value={countsGranularity}
+                                                        onChange={(e) => setCountsGranularity(e.target.value as 'monthly' | 'annual')}
+                                                        style={{
+                                                            padding: '6px 34px 6px 10px',
+                                                            borderRadius: 8,
+                                                            border: '1px solid rgba(0, 0, 0, 0.3)',
+                                                            background: 'rgba(175,213,240,0.06)',
+                                                            fontWeight: 600,
+                                                            cursor: 'pointer',
+                                                            color: 'rgba(0, 0, 0, 0.6)',
+                                                            fontSize: 13,
+                                                            WebkitAppearance: 'none',
+                                                            MozAppearance: 'none',
+                                                            appearance: 'none'
+                                                        }}
+                                                    >
+                                                        <option value="monthly">Monthly</option>
+                                                        <option value="annual">Annual</option>
+                                                    </select>
+                                                    <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                                 {renderChart()}
                             </div>
@@ -659,7 +1022,7 @@ export default function Dashboard() {
                                 display: 'flex',
                                 zIndex: 1, // Behind chart container
                             }}>
-                                {['EPA TREND', 'COMPLEXITY VS EPA', 'PROCEDURE-SPECIFIC EPA'].map((tab, index) => (
+                                {['EPA TREND', 'COMPLEXITY VS EPA', 'PROCEDURE-SPECIFIC EPA', 'PROCEDURE COUNTS'].map((tab, index) => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveTab(tab)}
@@ -705,7 +1068,7 @@ export default function Dashboard() {
                                 borderRadius: 6,
                                 fontSize: 13,
                             }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', color: '#0f172a' }}>
                                     <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 20, boxShadow: '0 2px 6px rgba(0,0,0,0.06)' }}>
                                         <tr>
                                             <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Date</th>
@@ -730,7 +1093,7 @@ export default function Dashboard() {
                                                         <div style={{ fontWeight: 600 }}>{proc.trainee_name}</div>
                                                         <div style={{ fontSize: 12, color: '#666' }}>{proc.attending_name}</div>
                                                     </td>
-                                                    <td style={{ padding: '8px 12px', color: '#000' }}>{proc.proc_code || proc.proc_desc}</td>
+                                                    <td style={{ padding: '8px 12px', color: '#000' }}>{truncateText(proc.proc_desc || proc.proc_code)}</td>
                                                     <td style={{ padding: '8px 12px', color: '#000' }}>{proc.proc_desc}</td>
                                                     <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                                                         {(() => {

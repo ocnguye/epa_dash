@@ -253,7 +253,8 @@ export default function AdminPage() {
                                             title={sortOrder === 'asc' ? 'Sort ascending' : 'Sort descending'}
                                     style={{
                                         background: '#fff',
-                                        border: '1px solid #e6e6e6',
+                                        color: '#374151',
+                                        border: '1px solid rgba(55,65,81,0.08)',
                                         padding: '8px',
                                         borderRadius: 8,
                                         cursor: 'pointer',

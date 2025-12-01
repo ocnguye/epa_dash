@@ -8,7 +8,8 @@ const getConnection = async () => mysql.createConnection({
     database: process.env.AWS_RDS_DB || 'powerscribe',
 });
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, context: any) {
+    const { params } = context || {};
     try {
         const username = req.cookies.get('username')?.value;
         if (!username) return NextResponse.json({ success: false, message: 'Not authenticated' }, { status: 401 });

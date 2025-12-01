@@ -126,6 +126,7 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [activeTab, setActiveTab] = useState('EPA TREND');
+        const [timeframe, setTimeframe] = useState<'last_month' | 'last_year' | 'all'>('all');
     // Profile modal state
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ username: '', password: '', confirm_password: '', preferred_name: '', first_name: '', last_name: '', role: '', pgy: '' });
@@ -267,11 +268,25 @@ export default function Dashboard() {
 
     const feedbackRate = stats.total_procedures ? (stats.feedback_requested / stats.total_procedures) * 100 : 0;
 
+    // filter procedures by timeframe for charts/tables
+    const filteredProcedures = useMemo(() => {
+        if (!procedures || procedures.length === 0) return [] as Procedure[];
+        if (timeframe === 'all') return procedures;
+        const now = new Date();
+        const cutoff = timeframe === 'last_month'
+            ? new Date(now.getTime() - 1000 * 60 * 60 * 24 * 30)
+            : new Date(now.getTime() - 1000 * 60 * 60 * 24 * 365);
+        return procedures.filter(p => {
+            const d = new Date(p.create_date);
+            return d >= cutoff;
+        });
+    }, [procedures, timeframe]);
+
     const chartData = useMemo(() => {
-        if (!procedures.length) return null;
+        if (!filteredProcedures.length) return null;
 
         // EPA Trend Data - chronological order
-        const sortedProcedures = [...procedures].sort((a, b) => new Date(a.create_date).getTime() - new Date(b.create_date).getTime());
+        const sortedProcedures = [...filteredProcedures].sort((a, b) => new Date(a.create_date).getTime() - new Date(b.create_date).getTime());
         const epaTrendData = {
             labels: sortedProcedures.map(proc => {
                 const date = new Date(proc.create_date);
@@ -297,15 +312,11 @@ export default function Dashboard() {
             ]
         };
 
-
         const complexityVsEpaData = {
             datasets: [
                 {
                     label: 'Procedures',
-                    data: procedures.map(proc => ({
-                        x: proc.complexity, 
-                        y: proc.oepa
-                    })),
+                    data: filteredProcedures.map(proc => ({ x: proc.complexity, y: proc.oepa })),
                     backgroundColor: '#afd5f0',
                     borderColor: '#fff',
                     borderWidth: 2,
@@ -315,7 +326,7 @@ export default function Dashboard() {
             ]
         };
 
-        const procTypeStats = procedures.reduce((acc, proc) => {
+        const procTypeStats = filteredProcedures.reduce((acc, proc) => {
             const key = proc.proc_code || 'Unknown';
             if (!acc[key]) {
                 // keep a representative description for the procedure code (first seen)
@@ -372,7 +383,7 @@ export default function Dashboard() {
             complexityVsEpa: complexityVsEpaData,
             procedureSpecific: procedureSpecificData
         };
-    }, [procedures]);
+    }, [filteredProcedures]);
 
 
     const renderChart = () => {

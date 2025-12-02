@@ -40,7 +40,8 @@ export default function LoginPage() {
                     router.push('/dash');
                 }
             } else {
-                setError(data.message || 'Login failed');
+                // Provide a clear credential mismatch message for failed logins
+                setError('Username and password do not match');
             }
         } catch (err) {
             setError('Server error. Please try again.');
@@ -112,7 +113,7 @@ export default function LoginPage() {
                             name="username"
                             required
                             value={username}
-                            onChange={e => setUsername(e.target.value)}
+                            onChange={e => { setUsername(e.target.value); if (error) setError(''); }}
                             style={{
                                 width: '100%',
                                 padding: 8,
@@ -141,7 +142,7 @@ export default function LoginPage() {
                             name="password"
                             required
                             value={password}
-                            onChange={e => setPassword(e.target.value)}
+                            onChange={e => { setPassword(e.target.value); if (error) setError(''); }}
                             style={{
                                 width: '100%',
                                 padding: 8,
@@ -168,6 +169,11 @@ export default function LoginPage() {
                         >
                             Login
                         </button>
+                        {error && (
+                            <div role="alert" style={{ color: '#b91c1c', marginTop: 12, fontSize: 13 }}>
+                                {error}
+                            </div>
+                        )}
                     </form>
                 </div>
             </div>

@@ -15,9 +15,9 @@ type Row = {
 export default function RprTable({ rows }: { rows: Row[] }) {
   return (
     <div style={{ background: '#fff', padding: 12, borderRadius: 8, boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', color: '#333' }}>
         <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #eee' }}>
+          <tr style={{ textAlign: 'left', borderBottom: '1px solid #eee', color: '#222' }}>
             <th style={{ padding: '8px 6px' }}>Accession</th>
             <th style={{ padding: '8px 6px' }}>Date</th>
             <th style={{ padding: '8px 6px' }}>Procedure</th>
@@ -29,7 +29,7 @@ export default function RprTable({ rows }: { rows: Row[] }) {
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid #f6f6f6' }}>
+            <tr key={i} style={{ borderBottom: '1px solid #f6f6f6', color: '#333' }}>
               <td style={{ padding: '8px 6px', fontSize: 13 }}>{r.accession ?? ''}</td>
               <td style={{ padding: '8px 6px', fontSize: 13 }}>{r.createdate ?? ''}</td>
               <td style={{ padding: '8px 6px', fontSize: 13 }}>{r.procedure_name ?? ''}</td>

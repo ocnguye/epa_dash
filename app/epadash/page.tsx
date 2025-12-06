@@ -24,6 +24,7 @@ import {
     ChartOptions 
 } from 'chart.js';
 import { useRouter } from 'next/navigation';
+import DashboardToggle from '@/components/DashboardToggle';
 
 ChartJS.register(
     CategoryScale, 
@@ -765,6 +766,10 @@ export default function Dashboard() {
                     </div>
 
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <DashboardToggle />
+                        </div>
+
                         <button
                             onClick={openProfileModal}
                             style={{

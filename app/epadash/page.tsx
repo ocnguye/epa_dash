@@ -1,9 +1,10 @@
 'use client';
 
 /* Imports */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import  ProgressCircle from "@/components/ProgressCircle";
 import SeekFeedbackChart from "@/components/SeekFeedbackChart";
+import KeyPerformanceMetrics from "@/components/KeyPerformanceMetrics";
 import { 
     epaTrendOptions, 
     complexityVsEpaOptions, 
@@ -140,6 +141,37 @@ export default function Dashboard() {
     const [countsGranularity, setCountsGranularity] = useState<'monthly' | 'annual'>('monthly');
     // selected procedure for the PROCEDURE COUNTS view (separate from the EPA TREND filter)
     const [countsSelectedProcedure, setCountsSelectedProcedure] = useState<string>('all');
+    // Chart container ref + dynamic tab sizing
+    const chartContainerRef = useRef<HTMLDivElement | null>(null);
+    const [chartContainerWidth, setChartContainerWidth] = useState<number>(0);
+    const tabs = ['EPA TREND', 'COMPLEXITY VS EPA', 'PROCEDURE-SPECIFIC EPA', 'PROCEDURE COUNTS'];
+    const tabOverlap = 12; // pixels of overlap between adjacent tabs
+
+    useEffect(() => {
+        const el = chartContainerRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') {
+            if (el) setChartContainerWidth(el.clientWidth || 0);
+            return;
+        }
+        // observe size changes
+        const ro = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                const w = entry.contentRect.width;
+                setChartContainerWidth(Math.floor(w));
+            }
+        });
+        ro.observe(el);
+        // initial
+        setChartContainerWidth(el.clientWidth || 0);
+        return () => ro.disconnect();
+    }, [chartContainerRef]);
+
+    const computedTabWidth = (() => {
+        const count = tabs.length;
+        if (!count || !chartContainerWidth) return 200;
+        const totalVisible = chartContainerWidth + tabOverlap * (count - 1);
+        return Math.max(100, Math.floor(totalVisible / count));
+    })();
     // Profile modal state
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ username: '', password: '', confirm_password: '', preferred_name: '', first_name: '', last_name: '', role: '', pgy: '' });
@@ -397,23 +429,47 @@ export default function Dashboard() {
             }
         }
 
+        const cohortAvg = (typeof (stats as any)?.cohort_avg_epa === 'number') ? (stats as any).cohort_avg_epa : 0;
+
+        const epaDatasets: any[] = [];
+        epaDatasets.push({
+            label: 'EPA Score',
+            data: epaData,
+            borderColor: '#afd5f0',
+            backgroundColor: 'rgba(74, 144, 226, 0.1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.4,
+            pointBackgroundColor: '#afd5f0',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2,
+            pointRadius: 6,
+        });
+        if (cohortAvg && cohortAvg > 0) {
+            epaDatasets.push({
+                label: 'Peer Cohort',
+                data: epaLabels.map(() => Number(cohortAvg)),
+                cohortValue: Number(cohortAvg),
+                // attach PGY for tooltip/title display
+                cohortPgy: (user && typeof (user as any).pgy !== 'undefined') ? (user as any).pgy : null,
+                borderColor: '#ffe26c',
+                backgroundColor: 'rgba(255, 226, 108, 0.12)',
+                borderWidth: 2,
+                fill: false,
+                tension: 0.2,
+                borderDash: [6, 4],
+                // remove visible points on the cohort line but keep a generous hover/hit area
+                pointRadius: 0,
+                pointHoverRadius: 10,
+                pointHitRadius: 10,
+                // also allow a slightly larger interactive area
+                hoverBorderWidth: 2,
+            });
+        }
+
         const epaTrendData = {
             labels: epaLabels,
-            datasets: [
-                {
-                    label: 'EPA Score',
-                    data: epaData,
-                    borderColor: '#afd5f0',
-                    backgroundColor: 'rgba(74, 144, 226, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#afd5f0',
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2,
-                    pointRadius: 6,
-                }
-            ]
+            datasets: epaDatasets
         };
 
         const complexityVsEpaData = {
@@ -487,7 +543,7 @@ export default function Dashboard() {
             complexityVsEpa: complexityVsEpaData,
             procedureSpecific: procedureSpecificData
         };
-    }, [displayProcedures, filteredProcedures, timeframe]);
+    }, [displayProcedures, filteredProcedures, timeframe, stats, user]);
 
     // procedure counts (monthly or annual) computed from all procedures and filtered by selectedProcedure
     const procedureCounts = useMemo(() => {
@@ -865,7 +921,7 @@ export default function Dashboard() {
                             position: 'relative',
                         }}>
                             {/* Chart Container */}
-                            <div style={{
+                            <div ref={chartContainerRef} style={{
                                 background: '#fff',
                                 borderRadius: 12,
                                 padding: 24,
@@ -1022,14 +1078,14 @@ export default function Dashboard() {
                                 display: 'flex',
                                 zIndex: 1, // Behind chart container
                             }}>
-                                {['EPA TREND', 'COMPLEXITY VS EPA', 'PROCEDURE-SPECIFIC EPA', 'PROCEDURE COUNTS'].map((tab, index) => (
+                                {tabs.map((tab, index) => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveTab(tab)}
                                         style={{
                                             background: activeTab === tab ? '#6b7280' : '#e5e7fa',
                                             color: activeTab === tab ? '#ffffffff' : '#000000',
-                                            width: 250,
+                                            width: computedTabWidth,
                                             height: 40,
                                             border: '1px solid rgba(107, 114, 128, 0.5)',
                                             borderRadius: '8px 8px 0 0', // Only top corners rounded
@@ -1039,10 +1095,16 @@ export default function Dashboard() {
                                             transition: 'all 0.2s ease',
                                             position: 'relative',
                                             zIndex: 3 - index, // Active tab highest among tabs, others decrease
-                                            marginLeft: index > 0 ? '-12px' : '0', // Negative margin for overlap
+                                            marginLeft: index > 0 ? `-${tabOverlap}px` : '0', // Negative margin for overlap
                                             boxShadow: activeTab === tab
                                                 ? '0 -2px 8px rgba(0,0,0,0.15)'
                                                 : '0 -1px 4px rgba(0,0,0,0.08)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            overflow: 'hidden',
+                                            whiteSpace: 'nowrap',
+                                            textOverflow: 'ellipsis'
                                         }}
                                     >
                                         {tab}
@@ -1181,68 +1243,9 @@ export default function Dashboard() {
                             />
                         </div>
 
-                        {/* Recent Feedback */}
-                        <div style={{
-                            background: '#fff',
-                            borderRadius: 12,
-                            padding: 24,
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                        }}>
-                            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 16, color: '#000' }}>
-                                Recent Feedback
-                            </div>
-                            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                                {loading ? (
-                                    <div style={{ color: '#888', textAlign: 'center' }}>Loading...</div>
-                                ) : (
-                                    procedures.map((proc) => (
-                                        <div key={proc.report_id} style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #f0f0f0' }}>
-                                            <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
-                                                {(() => {
-                                                    const [year, month, day] = proc.create_date.split('-');
-                                                    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-                                                    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                                                })()}
-                                            </div>
-                                            <div style={{ fontWeight: 600, color: '#000', fontSize: 14, marginBottom: 4 }}>
-                                                {proc.proc_desc}
-                                            </div>
-                                            {/* Render status text as a select so the badge is also the control */}
-                                            <div style={{ position: 'relative', display: 'inline-block', width: 160 }}>
-                                                <select
-                                                    value={proc.seek_feedback}
-                                                    onChange={(e) => updateProcedureStatus(proc.report_id, e.target.value)}
-                                                    title={getStatusDescription(proc.seek_feedback)}
-                                                    style={{
-                                                        padding: '4px 8px',
-                                                        paddingRight: '30px',
-                                                        borderRadius: 6,
-                                                        fontSize: 11,
-                                                        fontWeight: 600,
-                                                        display: 'inline-block',
-                                                        width: '100%',
-                                                        textAlign: 'center',
-                                                        cursor: 'pointer',
-                                                        border: '1px solid rgba(0,0,0,0.06)',
-                                                        backgroundColor: getFeedbackStatus(proc.seek_feedback).bgColor,
-                                                        color: getFeedbackStatus(proc.seek_feedback).color,
-                                                        WebkitAppearance: 'none',
-                                                        MozAppearance: 'none',
-                                                        appearance: 'none',
-                                                    }}
-                                                >
-                                                    <option value="not_required">Not Required</option>
-                                                    <option value="feedback_requested">Feedback Requested</option>
-                                                    <option value="discussed">Discussed</option>
-                                                </select>
-                                                <svg viewBox="0 0 10 6" style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 8, height: 5, pointerEvents: 'none', color: getFeedbackStatus(proc.seek_feedback).color }} xmlns="http://www.w3.org/2000/svg">
-                                                    <path d="M0 0 L5 6 L10 0" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                                                </svg>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
+                        {/* Key Performance Metrics (replaces recent feedback on trainee dashboard) */}
+                        <div>
+                            <KeyPerformanceMetrics procedures={procedures} loading={loading} />
                         </div>
 
                         {/* Seek Feedback Rate Trends */}

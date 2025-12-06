@@ -50,6 +50,13 @@ export async function GET(req: NextRequest) {
                 DATE_FORMAT(r.CreateDate, '%Y-%m-%d') AS create_date,
                 r.ProcedureDescList AS proc_desc,
                 REPLACE(NULLIF(TRIM(r.ProcedureCodeList), ''), ';', ', ') AS proc_code,
+                -- fluoroscopy fields parsed into reports by the migration script
+                r.fluoroscopy_time_raw AS fluoroscopy_time_raw,
+                r.fluoroscopy_time_minutes AS fluoroscopy_time_minutes,
+                r.fluoroscopy_time_unit AS fluoroscopy_time_unit,
+                r.fluoroscopy_dose_raw AS fluoroscopy_dose_raw,
+                r.fluoroscopy_dose_value AS fluoroscopy_dose_value,
+                r.fluoroscopy_dose_unit AS fluoroscopy_dose_unit,
                 r.epa AS oepa,
                 r.complexity AS complexity,
                 r.Attending AS raw_attending,
@@ -93,6 +100,8 @@ export async function GET(req: NextRequest) {
         const [statsRows] = await connection.execute(
             `SELECT
                 COALESCE(ROUND(AVG(CASE WHEN r.epa REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN CAST(r.epa AS DECIMAL(5,2)) END), 2), 0) AS avg_epa,
+                COALESCE(ROUND(AVG(r.fluoroscopy_time_minutes), 2), 0) AS avg_fluoro_minutes,
+                COALESCE(ROUND(AVG(r.fluoroscopy_dose_value), 2), 0) AS avg_fluoro_dose,
                 COUNT(CASE WHEN MONTH(r.CreateDate) = MONTH(CURRENT_DATE()) AND YEAR(r.CreateDate) = YEAR(CURRENT_DATE()) THEN 1 END) AS procedures,
                 COUNT(*) AS total_reports,
                 COALESCE((SELECT COUNT(*) FROM feedback_requests fr WHERE fr.trainee_user_id = ? AND fr.status = 'feedback_requested'), 0) AS feedback_requested,
@@ -108,13 +117,40 @@ export async function GET(req: NextRequest) {
 
         const stats = statsRows[0] || {};
 
-        const formattedStats = {
+        const formattedStats: any = {
             avg_epa: Number(stats.avg_epa) || 0,
+            avg_fluoro_minutes: Number(stats.avg_fluoro_minutes) || 0,
+            avg_fluoro_dose: Number(stats.avg_fluoro_dose) || 0,
             procedures: Number(stats.procedures) || 0,
             feedback_requested: Number(stats.feedback_requested) || 0,
             feedback_discussed: Number(stats.feedback_discussed) || 0,
             total_reports: Number(stats.total_reports) || 0,
         };
+
+        // Compute anonymized cohort average EPA for the user's peer cohort (by PGY) when available
+        let cohortAvg = 0;
+        try {
+            if (user.pgy !== null) {
+                const [cohortRows] = await connection.execute(
+                    `SELECT COALESCE(ROUND(AVG(CASE WHEN r.epa REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN CAST(r.epa AS DECIMAL(5,2)) END), 2), 0) AS cohort_avg_epa
+                     FROM reports r
+                     LEFT JOIN users u ON (
+                        r.trainee = u.user_id
+                        OR r.trainee = CONCAT(u.first_name, ' ', u.last_name)
+                        OR r.trainee = u.username
+                     )
+                     WHERE u.pgy = ? AND u.user_id != ?`,
+                    [user.pgy, user_id]
+                );
+                const crow = (cohortRows as any[])[0];
+                cohortAvg = crow ? Number(crow.cohort_avg_epa) || 0 : 0;
+            }
+        } catch (e) {
+            console.error('Cohort avg query failed:', e);
+            cohortAvg = 0;
+        }
+
+        formattedStats.cohort_avg_epa = cohortAvg;
 
         await connection.end();
 

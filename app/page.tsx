@@ -7,6 +7,7 @@ export default function LoginPage() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [preferredDashboard, setPreferredDashboard] = useState<'epadash' | 'rprdash'>('epadash');
     const router = useRouter();
 
      const handleSubmit = async (e: React.FormEvent) => {
@@ -19,25 +20,29 @@ export default function LoginPage() {
                 body: JSON.stringify({ username, password }),
             });
             const data = await res.json();
-            if (data.success) {
+                if (data.success) {
                 // After successful login, check role and route appropriately
                 try {
                     const meRes = await fetch('/api/dashboard');
                     if (meRes.ok) {
                         const meJson = await meRes.json();
                         const role = meJson?.user?.role;
-                        if (role === 'attending') {
-                            router.push('/admin');
-                        } else {
-                            router.push('/dash');
-                        }
+                            if (role === 'attending') {
+                                router.push('/admin');
+                            } else {
+                                // route to the dashboard the user selected on the login form
+                                if (preferredDashboard === 'rprdash') router.push('/rprdash');
+                                else router.push('/epadash');
+                            }
                     } else {
                         // Fallback to trainee dashboard
-                        router.push('/dash');
+                        if (preferredDashboard === 'rprdash') router.push('/rprdash');
+                        else router.push('/epadash');
                     }
                 } catch (err) {
                     // network or other error; fallback
-                    router.push('/dash');
+                    if (preferredDashboard === 'rprdash') router.push('/rprdash');
+                    else router.push('/epadash');
                 }
             } else {
                 // Provide a clear credential mismatch message for failed logins
@@ -94,6 +99,33 @@ export default function LoginPage() {
                     <h3 style={{ textAlign: 'center', marginBottom: 20, color: '#0000008b', fontSize: 14, fontWeight: 200 }}>
                         Please enter your credentials
                     </h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                            <label style={{ fontSize: 16, fontWeight: 600, color: '#000', marginBottom: 4 }}>Dashboard</label>
+                            <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                                <select
+                                    value={preferredDashboard}
+                                    onChange={e => setPreferredDashboard(e.target.value as 'epadash' | 'rprdash')}
+                                    style={{
+                                        width: '100%',
+                                        padding: '8px 34px 8px 10px',
+                                        borderRadius: 4,
+                                        border: '1px solid #ccc',
+                                        color: '#0000008b',
+                                        fontSize: 16,
+                                        fontWeight: 400,
+                                        WebkitAppearance: 'none',
+                                        MozAppearance: 'none',
+                                        appearance: 'none'
+                                    }}
+                                >
+                                    <option value="epadash">EPA Dashboard</option>
+                                    <option value="rprdash">RPR Dashboard</option>
+                                </select>
+                                <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                    <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            </div>
+                        </div>
                     <form onSubmit={handleSubmit}>
                         <label
                             htmlFor="username"

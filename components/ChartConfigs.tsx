@@ -4,6 +4,12 @@ import { ChartOptions } from 'chart.js';
 export const epaTrendOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+        // require intersection so tooltip shows only for the hovered dataset (prevents mixed tooltips)
+        mode: 'nearest',
+        intersect: true,
+        axis: 'x'
+    },
     plugins: {
         legend: {
             display: false,
@@ -14,6 +20,57 @@ export const epaTrendOptions: ChartOptions<'line'> = {
             bodyColor: '#fff',
             borderColor: '#4a90e2',
             borderWidth: 1,
+            mode: 'nearest',
+            intersect: true,
+            callbacks: {
+                title: function(context: any) {
+                    try {
+                        if (!context || !context.length) return '';
+                        const ds = context[0].dataset as any;
+                        // If hovering the cohort dataset, hide the title (so date is not shown)
+                        if (ds && String(ds.label || '').toLowerCase().includes('cohort')) {
+                            return [];
+                        }
+                        const lbl = context[0].label ?? (context[0].parsed && context[0].parsed.x ? String(context[0].parsed.x) : '');
+                        return lbl ? [String(lbl)] : [];
+                    } catch (e) {
+                        return '';
+                    }
+                },
+                label: function(context: any) {
+                    try {
+                        const ds = context.dataset as any;
+                        const val = (context.parsed && typeof context.parsed.y === 'number') ? context.parsed.y : (context.raw ?? null);
+                        const lines: string[] = [];
+                        if (typeof val === 'number' && !Number.isNaN(val)) {
+                            lines.push(`${context.dataset.label}: ${val.toFixed(2)}`);
+                        } else {
+                            lines.push(`${context.dataset.label}: ${String(val)}`);
+                        }
+                        // Only show cohort average when hovering the cohort dataset itself
+                        if (ds && ds.cohortValue && String(ds.label || '').toLowerCase().includes('cohort')) {
+                            lines.push(`Cohort average (PGY): ${Number(ds.cohortValue).toFixed(2)}`);
+                        }
+                        return lines;
+                    } catch (e) {
+                        return `${context.dataset.label}: ${context.parsed?.y ?? 'N/A'}`;
+                    }
+                }
+                ,
+                footer: function(context: any) {
+                    try {
+                        if (!context || !context.length) return '';
+                        const ds = context[0].dataset as any;
+                        if (ds && String(ds.label || '').toLowerCase().includes('cohort')) {
+                            const pgy = ds.cohortPgy ? `PGY ${ds.cohortPgy}` : 'PGY';
+                            return `${pgy} cohort — All time`;
+                        }
+                        return '';
+                    } catch (e) {
+                        return '';
+                    }
+                }
+            }
         }
     },
     scales: {

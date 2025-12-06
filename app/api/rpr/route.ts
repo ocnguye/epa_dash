@@ -3,6 +3,11 @@ import mysql from 'mysql2/promise';
 
 export async function GET(req: NextRequest) {
   try {
+    const username = req.cookies.get('username')?.value;
+    if (!username) {
+      return NextResponse.json({ success: false, message: 'Not authenticated' }, { status: 401 });
+    }
+
     const connection = await mysql.createConnection({
       host: process.env.AWS_RDS_HOST,
       user: process.env.AWS_RDS_USER,
@@ -10,7 +15,21 @@ export async function GET(req: NextRequest) {
       database: process.env.AWS_RDS_DB || 'powerscribe',
     });
 
-    // Simple read of recent RPR reports with optional join to users if ids present
+    // Find the logged-in user so we can filter rpr_reports for that trainee
+    const [userRows] = await connection.execute(
+      `SELECT user_id, first_name, last_name FROM users WHERE username = ? LIMIT 1`,
+      [username]
+    );
+    if (!Array.isArray(userRows) || (userRows as any).length === 0) {
+      await connection.end();
+      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
+    }
+    const rawUser = (userRows as any)[0];
+    const userId = Number(rawUser.user_id);
+    const firstName = rawUser.first_name || '';
+    const lastName = rawUser.last_name || '';
+
+    // Return recent RPR reports only for this trainee (flexible matching similar to other APIs)
     const [rows] = await connection.execute(
       `SELECT
          r.Accession AS accession,
@@ -33,8 +52,16 @@ export async function GET(req: NextRequest) {
        FROM rpr_reports r
        LEFT JOIN users u1 ON r.trainee_id = u1.user_id
        LEFT JOIN users u2 ON r.attending_id = u2.user_id
+       WHERE (
+         r.trainee_id = ?
+         OR r.trainee_id = CONCAT(?, ' ', ?)
+         OR r.trainee_id = ?
+         OR r.FIRST_RESIDENT = CONCAT(?, ' ', ?)
+       )
        ORDER BY r.CREATEDATE DESC
-       LIMIT 500`);
+       LIMIT 1000`,
+      [userId, firstName, lastName, username, firstName, lastName]
+    );
 
     await connection.end();
     return NextResponse.json({ success: true, data: rows });

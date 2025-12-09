@@ -22,7 +22,11 @@ export default function RprDashPage() {
     const [profileSuccess, setProfileSuccess] = useState('');
     const router = useRouter();
     
-    const [rprScore, setRprScore] = useState<number>(4);
+    // Keep cohort-specific score separate so changing cohort filter does NOT
+    // trigger page-wide refreshes. cohortScore applies only to the Cohort
+    // chart and the Compare control; Breakdown and the Table remain
+    // independently controlled.
+    const [cohortScore, setCohortScore] = useState<number | null>(4);
 
     const filteredRows = useMemo(() => {
         // Timeline filter removed — return all rows for the RPR dashboard
@@ -32,8 +36,13 @@ export default function RprDashPage() {
 
     useEffect(() => {
         let mounted = true;
-        setLoading(true);
-        fetch(`/api/rpr?score=${rprScore}`)
+    setLoading(true);
+    // The table should show ALL reports for the logged-in user (no RPR score filter).
+    // Only Cohort and Compare components receive the rprScore filter.
+    const apiUrl = `/api/rpr`;
+    console.debug('[RPR Dashboard] fetching table data (no score)', apiUrl);
+
+    fetch(apiUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
             .then(res => res.json())
             .then((payload) => {
                 if (!mounted) return;
@@ -53,7 +62,7 @@ export default function RprDashPage() {
                 if (mounted) setLoading(false);
             });
         return () => { mounted = false; };
-    }, [rprScore]);
+    }, []);
 
     useEffect(() => {
         // fetch basic user info for header display
@@ -269,18 +278,18 @@ export default function RprDashPage() {
                                 {/* Summary removed as requested */}
 
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 12, alignItems: 'stretch', marginTop: 8 }}>
-                                    <div style={{ minWidth: 0, minHeight: 560, height: '100%' }}>
-                                        <RprCohortChart score={rprScore} />
+                                        <div style={{ minWidth: 0, minHeight: 560, height: '100%' }}>
+                                        <RprCohortChart score={cohortScore} />
                                     </div>
                                     <div style={{ minHeight: 560, height: '100%' }}>
-                                        <RprRpr4Compare score={rprScore} setScore={setRprScore} />
+                                        <RprRpr4Compare score={cohortScore} setScore={setCohortScore} />
                                     </div>
                                 </div>
-                                    <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '520px 1fr', gap: 12 }}>
-                                        <div>
-                                            <RprBreakdown />
+                                    <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '520px 1fr', gap: 12, alignItems: 'stretch' }}>
+                                        <div style={{ minHeight: 420, height: '100%' }}>
+                                <RprBreakdown />
                                         </div>
-                                        <div>
+                                        <div style={{ minHeight: 420, height: '100%' }}>
                                             <RprTable rows={filteredRows} />
                                         </div>
                                     </div>

@@ -3,29 +3,36 @@
 import React from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 
-export default function DashboardToggle({ className }: { className?: string }) {
+type Props = {
+  className?: string;
+  // paths to navigate between. Defaults preserve existing behavior for non-admin pages.
+  epaPath?: string;
+  rprPath?: string;
+};
+
+export default function DashboardToggle({ className, epaPath = '/epadash', rprPath = '/rprdash' }: Props) {
   const router = useRouter();
   const pathname = usePathname() || '';
 
   const onClick = () => {
-    // Simple toggle between /epadash and /rprdash
-    if (pathname.startsWith('/epadash')) {
-      router.push('/rprdash');
+    // Toggle: if currently on epaPath, go to rprPath, otherwise go to epaPath
+    if (pathname.startsWith(epaPath)) {
+      router.push(rprPath);
     } else {
-      router.push('/epadash');
+      router.push(epaPath);
     }
   };
 
-  const isEpa = pathname.startsWith('/epadash');
+  const isEpa = pathname.startsWith(epaPath);
 
   return (
     <button
       onClick={onClick}
       className={className}
       style={{
-  // always use the lighter blue so the control is visually prominent and consistent
-  background: 'linear-gradient(135deg, #60a5fa, #3b82f6)',
-  color: '#fff',
+        // always use the lighter blue so the control is visually prominent and consistent
+        background: 'linear-gradient(135deg, #60a5fa, #3b82f6)',
+        color: '#fff',
         border: '1px solid rgba(55,65,81,0.08)',
         borderRadius: 8,
         padding: '10px 18px',
@@ -38,7 +45,7 @@ export default function DashboardToggle({ className }: { className?: string }) {
         alignItems: 'center',
         gap: 8,
       }}
-      title={isEpa ? 'Switch to RPR Dashboard' : 'Switch to EPA Dashboard'}
+      title={isEpa ? `Switch to ${rprPath}` : `Switch to ${epaPath}`}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
         (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 8px rgba(0,0,0,0.12)';

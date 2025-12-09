@@ -33,7 +33,7 @@ export default function TraineePage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/admin/trainees/${resolvedId}`);
+        const res = await fetch(`/api/adminepa/trainees/${resolvedId}`);
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           setError(body?.message || 'Failed to load trainee');
@@ -77,8 +77,6 @@ export default function TraineePage() {
     if (!procedures || procedures.length === 0) return null;
   const statsMap: Record<string, { sum:number; count:number; desc?:string; code?: string }> = {};
     procedures.forEach((p:any) => {
-      // Group by procedure DESCRIPTION rather than code so chart groups by the human-readable description.
-      // We also keep a representative proc_code (if present) so axis labels can prefer the short code like the trainee dashboard.
       const desc = p.proc_desc ? String(p.proc_desc).trim() : '';
       const code = p.proc_code ? String(p.proc_code).trim() : '';
       const key = desc || code || 'Unknown';
@@ -91,7 +89,6 @@ export default function TraineePage() {
     });
   const entries = Object.values(statsMap);
   const descriptions = entries.map(s => s.desc || '');
-  // Prefer short proc_code for axis labels (like trainee dashboard). If not available, truncate description.
   const truncate = (txt: string, n = 30) => txt && txt.length > n ? txt.slice(0, n - 1).trim() + '…' : txt;
   const labels = entries.map(e => (e.code && e.code !== 'Unknown') ? e.code : truncate(String(e.desc || 'Unknown'), 30));
     const counts = Object.values(statsMap).map(s => s.count || 0);
@@ -127,7 +124,7 @@ export default function TraineePage() {
               <div style={{ color: '#374151', marginTop: 6 }}>{user ? `PGY ${user.pgy ?? ''} • ${user.role ?? ''}` : ''}</div>
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => router.push('/admin')} style={{ background: '#fff', color: '#374151', border: '1px solid rgba(55,65,81,0.08)', borderRadius: 8, padding: '10px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Back to Trainees</button>
+              <button onClick={() => router.push('/adminepa')} style={{ background: '#fff', color: '#374151', border: '1px solid rgba(55,65,81,0.08)', borderRadius: 8, padding: '10px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Back to Trainees</button>
             </div>
           </div>
         </div>

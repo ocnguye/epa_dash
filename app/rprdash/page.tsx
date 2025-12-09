@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import RprTable from '../../components/RprTable';
 import RprRpr4Compare from '../../components/RprRpr4Compare';
 import RprCohortChart from '../../components/RprCohortChart';
+import RprBreakdown from '../../components/RprBreakdown';
 import DashboardToggle from '../../components/DashboardToggle';
 
 type Row = Record<string, any>;
@@ -172,6 +173,10 @@ export default function RprDashPage() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <DashboardToggle />
+                        </div>
+
                         <button
                             onClick={() => setShowProfileModal(true)}
                             style={{
@@ -250,8 +255,6 @@ export default function RprDashPage() {
                             </svg>
                             Logout
                         </button>
-
-                        {/* Dashboard toggle dynamic import placed after logout for backwards compatibility */}
                     </div>
                 </div>
 
@@ -273,8 +276,13 @@ export default function RprDashPage() {
                                         <RprRpr4Compare score={rprScore} setScore={setRprScore} />
                                     </div>
                                 </div>
-                                    <div style={{ marginTop: 12 }}>
-                                        <RprTable rows={filteredRows} />
+                                    <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '520px 1fr', gap: 12 }}>
+                                        <div>
+                                            <RprBreakdown />
+                                        </div>
+                                        <div>
+                                            <RprTable rows={filteredRows} />
+                                        </div>
                                     </div>
                             </>
                         )}

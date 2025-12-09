@@ -44,7 +44,7 @@ export default function AdminTraineeTable({ trainees }: { trainees: Trainee[] })
                             <td style={{ padding: '14px 18px', color: '#374151' }}>{typeof t.avg_epa === 'number' ? (t.avg_epa.toFixed ? t.avg_epa.toFixed(2) : t.avg_epa) : (t.avg_epa ?? 0)}</td>
                             <td style={{ padding: '14px 18px', color: '#374151' }}>{t.report_count ?? 0}</td>
                             <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                                <button onClick={() => router.push(`/admin/trainee/${t.user_id}`)} style={{ background: 'linear-gradient(135deg, #4a90e2, #2b7bd3)', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: 8, cursor: 'pointer', fontWeight: 700 }}>View</button>
+                                <button onClick={() => router.push(`/adminepa/trainee/${t.user_id}`)} style={{ background: 'linear-gradient(135deg, #4a90e2, #2b7bd3)', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: 8, cursor: 'pointer', fontWeight: 700 }}>View</button>
                             </td>
                         </tr>
                     ))}

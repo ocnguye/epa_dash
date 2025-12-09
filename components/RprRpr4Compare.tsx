@@ -8,7 +8,7 @@ type Stats = {
   disagree_percent: number;
 };
 
-export default function RprRpr4Compare({ score = 4, setScore }: { score?: number; setScore?: (n: number) => void }) {
+export default function RprRpr4Compare({ score = 4, setScore }: { score?: number | null; setScore?: (n: number | null) => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [trainee, setTrainee] = useState<Stats | null>(null);
@@ -17,7 +17,9 @@ export default function RprRpr4Compare({ score = 4, setScore }: { score?: number
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    fetch(`/api/rpr/aggregate${typeof score === 'number' ? `?score=${score}` : ''}`)
+    const url = `/api/rpr/aggregate${typeof score === 'number' ? `?score=${score}` : ''}`;
+    console.debug('[RprRpr4Compare] fetch', url, 'score:', score);
+    fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
       .then(r => r.json())
       .then((payload) => {
         if (!mounted) return;
@@ -55,14 +57,17 @@ export default function RprRpr4Compare({ score = 4, setScore }: { score?: number
   return (
     <div style={{ padding: 12, background: '#fff', borderRadius: 8, boxShadow: '0 1px 4px rgba(0,0,0,0.04)', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div style={{ fontSize: 13, color: '#374151', fontWeight: 700 }}>{`RPR${score} Rate`}</div>
+  <div style={{ fontSize: 13, color: '#374151', fontWeight: 700 }}>{`RPR${score ?? ' All'} Rate`}</div>
         <div style={{ display: 'inline-block' }}>
-          <label htmlFor="rpr-score-select-compare" style={{ fontSize: 12, fontWeight: 700, marginRight: 8 }}>RPR</label>
+          <label htmlFor="rpr-score-select-compare" style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginRight: 8 }}>RPR</label>
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <select
               id="rpr-score-select-compare"
-              value={String(score)}
-              onChange={(e) => setScore && setScore(Number(e.target.value))}
+              value={String(score ?? 0)}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setScore && setScore(v === 0 ? null : v);
+              }}
               style={{
                 padding: '6px 34px 6px 10px',
                 borderRadius: 8,
@@ -98,7 +103,7 @@ export default function RprRpr4Compare({ score = 4, setScore }: { score?: number
         <div style={barContainerStyle}>
           <div style={barFill(trainee.disagree_percent)} />
         </div>
-        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{`${trainee.disagree_count} disagree / ${trainee.total_with_rpr} reports with RPR`}</div>
+        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{`${trainee.disagree_count} Reports / ${trainee.total_with_rpr} Total Reports with RPR`}</div>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -109,7 +114,7 @@ export default function RprRpr4Compare({ score = 4, setScore }: { score?: number
         <div style={barContainerStyle}>
           <div style={barFill(overall.disagree_percent)} />
         </div>
-        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{`${overall.disagree_count} disagree / ${overall.total_with_rpr} reports with RPR`}</div>
+        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{`${overall.disagree_count} Reports / ${overall.total_with_rpr} Total Reports with RPR`}</div>
       </div>
     </div>
   );

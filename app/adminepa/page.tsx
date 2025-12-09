@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import AdminCohortChart from '../../components/AdminCohortChart';
 import AdminTraineeTable from '../../components/AdminTraineeTable';
+import DashboardToggle from '../../components/DashboardToggle';
 import { useRouter } from 'next/navigation';
 
 type Trainee = {
@@ -52,7 +53,7 @@ export default function AdminPage() {
                 // store current user for personalized header and profile edits
                 setCurrentUser(meJson.user || null);
 
-                const res = await fetch('/api/admin/trainees');
+                const res = await fetch('/api/adminepa/trainees');
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     setError(err?.message || 'Failed to load trainees');
@@ -139,6 +140,7 @@ export default function AdminPage() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <DashboardToggle epaPath="/adminepa" rprPath="/adminrpr" />
                         <button
                             onClick={() => {
                                 // Prefill form with current user values like trainee dashboard

@@ -23,7 +23,7 @@ type TraineePoint = {
   total_with_rpr: number;
 };
 
-export default function RprCohortChart({ score = 4 }: { score?: number }) {
+export default function RprCohortChart({ score = 4 }: { score?: number | null }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [points, setPoints] = useState<TraineePoint[]>([]);
@@ -33,7 +33,9 @@ export default function RprCohortChart({ score = 4 }: { score?: number }) {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    fetch(`/api/rpr/cohort${(typeof score === 'number' && score > 0) ? `?score=${score}` : ''}`)
+    const url = `/api/rpr/cohort${(typeof score === 'number' && score > 0) ? `?score=${score}` : ''}`;
+    console.debug('[RprCohortChart] fetch', url);
+    fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
       .then(r => r.json())
       .then((payload) => {
         if (!mounted) return;
@@ -203,7 +205,7 @@ export default function RprCohortChart({ score = 4 }: { score?: number }) {
 
   return (
     <div style={{ background: '#fff', borderRadius: 8, padding: 12, height: '100%', boxShadow: '0 1px 6px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8 }}>{`Anonymized Cohort RPR${score} Comparison`}</div>
+  <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8 }}>{`Anonymized Cohort RPR${score ?? 'All'} Comparison`}</div>
       <div style={{ flex: '1 1 0%', minHeight: 0 }}>
         <Scatter data={data as any} options={options} />
       </div>

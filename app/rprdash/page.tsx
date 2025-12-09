@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import RprTable from '../../components/RprTable';
-import RprSummary from '../../components/RprSummary';
+import RprRpr4Compare from '../../components/RprRpr4Compare';
+import RprCohortChart from '../../components/RprCohortChart';
 import DashboardToggle from '../../components/DashboardToggle';
 
 type Row = Record<string, any>;
@@ -19,11 +20,19 @@ export default function RprDashPage() {
     const [profileError, setProfileError] = useState('');
     const [profileSuccess, setProfileSuccess] = useState('');
     const router = useRouter();
+    
+    const [rprScore, setRprScore] = useState<number>(4);
+
+    const filteredRows = useMemo(() => {
+        // Timeline filter removed — return all rows for the RPR dashboard
+        if (!rows || rows.length === 0) return [] as Row[];
+        return rows;
+    }, [rows]);
 
     useEffect(() => {
         let mounted = true;
         setLoading(true);
-        fetch('/api/rpr')
+        fetch(`/api/rpr?score=${rprScore}`)
             .then(res => res.json())
             .then((payload) => {
                 if (!mounted) return;
@@ -43,7 +52,7 @@ export default function RprDashPage() {
                 if (mounted) setLoading(false);
             });
         return () => { mounted = false; };
-    }, []);
+    }, [rprScore]);
 
     useEffect(() => {
         // fetch basic user info for header display
@@ -163,9 +172,6 @@ export default function RprDashPage() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <DashboardToggle />
-                        </div>
                         <button
                             onClick={() => setShowProfileModal(true)}
                             style={{
@@ -244,35 +250,35 @@ export default function RprDashPage() {
                             </svg>
                             Logout
                         </button>
-                        
+
                         {/* Dashboard toggle dynamic import placed after logout for backwards compatibility */}
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {loading ? (
                             <div style={{ padding: 20, background: '#fff', borderRadius: 8 }}>Loading…</div>
                         ) : error ? (
                             <div style={{ padding: 20, background: '#fff', borderRadius: 8, color: 'red' }}>{error}</div>
                         ) : (
                             <>
-                                <RprSummary rows={rows} />
-                                <RprTable rows={rows} />
+                                {/* Summary removed as requested */}
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 12, alignItems: 'stretch', marginTop: 8 }}>
+                                    <div style={{ minWidth: 0, minHeight: 560, height: '100%' }}>
+                                        <RprCohortChart score={rprScore} />
+                                    </div>
+                                    <div style={{ minHeight: 560, height: '100%' }}>
+                                        <RprRpr4Compare score={rprScore} setScore={setRprScore} />
+                                    </div>
+                                </div>
+                                    <div style={{ marginTop: 12 }}>
+                                        <RprTable rows={filteredRows} />
+                                    </div>
                             </>
                         )}
                     </div>
-
-                    <aside style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <div style={{ background: '#fff', borderRadius: 8, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
-                            <div style={{ fontSize: 13, color: '#666' }}>Filters</div>
-                            <div style={{ marginTop: 8, color: '#333' }}>Showing only reports assigned to you.</div>
-                        </div>
-                        <div style={{ background: '#fff', borderRadius: 8, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.04)' }}>
-                            <div style={{ fontSize: 13, color: '#666' }}>Notes</div>
-                            <div style={{ marginTop: 8, fontSize: 13, color: '#333' }}>Parsed RPR tokens are shown where available. Use the extractor scripts to populate missing values.</div>
-                        </div>
-                    </aside>
                 </div>
                 {showProfileModal && (
                     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>

@@ -29,7 +29,20 @@ export async function GET(req: NextRequest) {
     const firstName = rawUser.first_name || '';
     const lastName = rawUser.last_name || '';
 
+    // Optional score filter (1-4) for returned reports. Defaults to 4 if not supplied.
+    const scoreParam = req.nextUrl.searchParams.get('score');
+    const score = scoreParam ? parseInt(scoreParam, 10) : null;
+    if (score !== null && (Number.isNaN(score) || score < 1 || score > 4)) {
+      await connection.end();
+      return NextResponse.json({ success: false, message: 'Invalid score parameter; must be 1,2,3 or 4' }, { status: 400 });
+    }
+
     // Return recent RPR reports only for this trainee (flexible matching similar to other APIs)
+    let scoreFilter = '';
+    if (score !== null) {
+      scoreFilter = ` AND (r.rpr_number_value = ${score} OR UPPER(COALESCE(r.rpr_number_raw, '')) REGEXP 'RPR[[:space:]]*${score}|RPR${score}|RPR-${score}')`;
+    }
+
     const [rows] = await connection.execute(
       `SELECT
          r.Accession AS accession,
@@ -57,9 +70,8 @@ export async function GET(req: NextRequest) {
          OR r.trainee_id = CONCAT(?, ' ', ?)
          OR r.trainee_id = ?
          OR r.FIRST_RESIDENT = CONCAT(?, ' ', ?)
-       )
-       ORDER BY r.CREATEDATE DESC
-       LIMIT 1000`,
+       ) ${scoreFilter}
+       ORDER BY r.CREATEDATE DESC`,
       [userId, firstName, lastName, username, firstName, lastName]
     );
 

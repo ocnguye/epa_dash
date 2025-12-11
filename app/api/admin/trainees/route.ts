@@ -38,14 +38,11 @@ export async function GET(req: NextRequest) {
                 u.preferred_name,
                 u.pgy,
                 u.role,
-                COALESCE(ROUND(AVG(CASE WHEN r.epa REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN CAST(r.epa AS DECIMAL(5,2)) END),2),0) AS avg_epa,
-                COUNT(r.ReportID) AS report_count
+                COALESCE(ROUND(AVG(es.epa_score),2),0) AS avg_epa,
+                COUNT(DISTINCT rp.report_id) AS report_count
              FROM users u
-             LEFT JOIN reports r ON (
-                r.trainee = u.user_id
-                OR r.trainee = CONCAT(u.first_name, ' ', u.last_name)
-                OR r.trainee = u.username
-             )
+             LEFT JOIN report_participants rp ON rp.user_id = u.user_id AND rp.role = 'trainee'
+             LEFT JOIN epa_scores es ON es.report_participant_id = rp.id
              WHERE u.role != 'attending'
              GROUP BY u.user_id
              ORDER BY avg_epa DESC, u.pgy DESC`);

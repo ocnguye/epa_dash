@@ -57,7 +57,13 @@ export async function GET(req: NextRequest) {
                 r.fluoroscopy_dose_raw AS fluoroscopy_dose_raw,
                 r.fluoroscopy_dose_value AS fluoroscopy_dose_value,
                 r.fluoroscopy_dose_unit AS fluoroscopy_dose_unit,
-                r.epa AS oepa,
+                                (
+                                    SELECT es.epa_score
+                                    FROM report_participants rp2
+                                    JOIN epa_scores es ON es.report_participant_id = rp2.id
+                                    WHERE rp2.report_id = r.ReportID AND rp2.role = 'trainee'
+                                    LIMIT 1
+                                ) AS oepa,
                 r.complexity AS complexity,
                 r.Attending AS raw_attending,
                 r.Trainee AS raw_trainee,
@@ -99,7 +105,7 @@ export async function GET(req: NextRequest) {
                 // Stats: average EPA from reports + counts. For feedback counts we read from feedback_requests
         const [statsRows] = await connection.execute(
             `SELECT
-                COALESCE(ROUND(AVG(CASE WHEN r.epa REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN CAST(r.epa AS DECIMAL(5,2)) END), 2), 0) AS avg_epa,
+                COALESCE(ROUND(AVG(es_main.epa_score), 2), 0) AS avg_epa,
                 COALESCE(ROUND(AVG(r.fluoroscopy_time_minutes), 2), 0) AS avg_fluoro_minutes,
                 COALESCE(ROUND(AVG(r.fluoroscopy_dose_value), 2), 0) AS avg_fluoro_dose,
                 COUNT(CASE WHEN MONTH(r.CreateDate) = MONTH(CURRENT_DATE()) AND YEAR(r.CreateDate) = YEAR(CURRENT_DATE()) THEN 1 END) AS procedures,
@@ -107,6 +113,8 @@ export async function GET(req: NextRequest) {
                 COALESCE((SELECT COUNT(*) FROM feedback_requests fr WHERE fr.trainee_user_id = ? AND fr.status = 'feedback_requested'), 0) AS feedback_requested,
                 COALESCE((SELECT COUNT(*) FROM feedback_requests fr WHERE fr.trainee_user_id = ? AND fr.status = 'discussed'), 0) AS feedback_discussed
              FROM reports r
+             LEFT JOIN report_participants rp_main ON rp_main.report_id = r.ReportID AND rp_main.role = 'trainee'
+             LEFT JOIN epa_scores es_main ON es_main.report_participant_id = rp_main.id
              WHERE (
                 r.trainee = ?
                 OR r.trainee = CONCAT(?, ' ', ?)
@@ -132,13 +140,15 @@ export async function GET(req: NextRequest) {
         try {
             if (user.pgy !== null) {
                 const [cohortRows] = await connection.execute(
-                    `SELECT COALESCE(ROUND(AVG(CASE WHEN r.epa REGEXP '^[0-9]+(\\.[0-9]+)?$' THEN CAST(r.epa AS DECIMAL(5,2)) END), 2), 0) AS cohort_avg_epa
+                    `SELECT COALESCE(ROUND(AVG(es2.epa_score), 2), 0) AS cohort_avg_epa
                      FROM reports r
                      LEFT JOIN users u ON (
                         r.trainee = u.user_id
                         OR r.trainee = CONCAT(u.first_name, ' ', u.last_name)
                         OR r.trainee = u.username
                      )
+                     LEFT JOIN report_participants rp2 ON rp2.report_id = r.ReportID AND rp2.role = 'trainee'
+                     LEFT JOIN epa_scores es2 ON es2.report_participant_id = rp2.id
                      WHERE u.pgy = ? AND u.user_id != ?`,
                     [user.pgy, user_id]
                 );

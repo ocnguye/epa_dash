@@ -35,44 +35,62 @@ export async function GET(req: NextRequest) {
     const hasRprCond = `(r.rpr_number_value IS NOT NULL OR (r.rpr_number_raw IS NOT NULL AND TRIM(r.rpr_number_raw) <> ''))`;
     const rprCond = `(r.rpr_number_value = ${score} OR UPPER(COALESCE(r.rpr_number_raw, '')) REGEXP 'RPR[[:space:]]*${score}|RPR${score}|RPR-${score}')`;
 
+    // Optional month filter (YYYY-MM) to limit counts to a specific month
+    const monthParam = req.nextUrl.searchParams.get('month');
+    let monthStartLiteral = '';
+    let monthParams: any[] = [];
+    if (monthParam) {
+      const m = monthParam.match(/^(\d{4})-(\d{2})$/);
+      if (!m) {
+        return NextResponse.json({ success: false, message: 'Invalid month parameter; expected YYYY-MM' }, { status: 400 });
+      }
+      const year = Number(m[1]);
+      const mon = Number(m[2]);
+      if (mon < 1 || mon > 12) {
+        return NextResponse.json({ success: false, message: 'Invalid month parameter; month out of range' }, { status: 400 });
+      }
+      const startDate = `${year}-${String(mon).padStart(2, '0')}-01`;
+      const endDate = new Date(year, mon, 0);
+      const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+      monthStartLiteral = ` AND DATE(r.EXAM_FINAL_DATE) BETWEEN ? AND ?`;
+      monthParams = [startDate, endDateStr];
+    }
+
     // Per-trainee aggregation (only include reports linked to users via trainee_id)
-    const [perRows] = await connection.execute(
-      `SELECT u.user_id AS uid, u.pgy AS pgy,
+    const perSql = `SELECT u.user_id AS uid, u.pgy AS pgy,
         COUNT(*) AS total_with_rpr,
   SUM(CASE WHEN ${rprCond} THEN 1 ELSE 0 END) AS disagree_count
        FROM rpr_reports r
        JOIN users u ON r.trainee_id = u.user_id
-       WHERE ${hasRprCond}
+       WHERE ${hasRprCond} ${monthStartLiteral}
        GROUP BY u.user_id, u.pgy
        HAVING total_with_rpr > 0
-       ORDER BY disagree_count DESC`,
-      []
-    );
+       ORDER BY disagree_count DESC`;
+    const perParams = monthParams;
+    const [perRows] = await connection.execute(perSql, perParams);
 
     // Compute cohort (PGY6) and overall averages
     let cohortRows: any = [{ disagree_count: 0, total_with_rpr: 0 }];
     if (myPgy !== null) {
-      const [cRows] = await connection.execute(
-        `SELECT
+      const cohortSql = `SELECT
            SUM(CASE WHEN ${rprCond} THEN 1 ELSE 0 END) AS disagree_count,
            COUNT(*) AS total_with_rpr
          FROM rpr_reports r
          JOIN users u ON r.trainee_id = u.user_id
-         WHERE ${hasRprCond} AND u.pgy = ?`,
-        [myPgy]
-      );
+         WHERE ${hasRprCond} AND u.pgy = ? ${monthStartLiteral}`;
+      const cohortParams = monthParams.length ? [myPgy, ...monthParams] : [myPgy];
+      const [cRows] = await connection.execute(cohortSql, cohortParams);
       cohortRows = cRows as any;
     }
 
     // overall should include all reports with RPR (including those without trainee_id)
-    const [overallRows] = await connection.execute(
-      `SELECT
+    const overallSql = `SELECT
          SUM(CASE WHEN ${rprCond} THEN 1 ELSE 0 END) AS disagree_count,
          COUNT(*) AS total_with_rpr
        FROM rpr_reports r
-       WHERE ${hasRprCond}`,
-      []
-    );
+       WHERE ${hasRprCond} ${monthStartLiteral}`;
+    const overallParams = monthParams;
+    const [overallRows] = await connection.execute(overallSql, overallParams);
 
     await connection.end();
 

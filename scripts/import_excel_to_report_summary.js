@@ -100,6 +100,55 @@ function capitalizeWords(s) {
   return s.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
+// Date handling helpers
+function twoDigitYearToFull(y) {
+  // convert 2-digit year to 20xx (assume 2000-2099)
+  const n = Number(y);
+  if (Number.isNaN(n)) return null;
+  return n < 100 ? 2000 + n : n;
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function toMySQLDateFromJSDate(d) {
+  if (!(d instanceof Date) || isNaN(d)) return null;
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+// Parse common Excel-formatted date strings like "5/10/23 4:57 PM" or "05/10/2023 16:57"
+function parseExcelDateString(v) {
+  if (v === null || typeof v === 'undefined') return null;
+  if (v instanceof Date) return toMySQLDateFromJSDate(v);
+  const s = String(v).trim();
+  // Try ISO parse first
+  const iso = new Date(s);
+  if (!isNaN(iso)) return toMySQLDateFromJSDate(iso);
+
+  // Match patterns like M/D/YY[YY] h:mm [AM|PM]
+  const re = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})[\sT]+(\d{1,2}):(\d{2})(?:\s*([APap][Mm]))?$/;
+  const m = s.match(re);
+  if (m) {
+    let mo = Number(m[1]);
+    let day = Number(m[2]);
+    let yr = Number(m[3]);
+    const hourRaw = Number(m[4]);
+    const min = Number(m[5]);
+    const ampm = m[6];
+    if (String(m[3]).length === 2) yr = twoDigitYearToFull(yr) || yr;
+    let hour = hourRaw;
+    if (ampm) {
+      const up = ampm.toUpperCase();
+      if (up === 'PM' && hour !== 12) hour = hour + 12;
+      if (up === 'AM' && hour === 12) hour = 0;
+    }
+    const d = new Date(yr, mo - 1, day, hour, min, 0);
+    return toMySQLDateFromJSDate(d);
+  }
+
+  // Fallback: return original string (MySQL may try to parse or insert NULL)
+  return s;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.length < 1) {
@@ -135,13 +184,22 @@ async function main() {
   headers.forEach((h, i) => console.log(`${i}: ${h} -> ${headerMap[i] || '<ignored>'}`));
 
   // Build rows in target column order
+  const dateColumns = new Set(['CREATEDATE','ORDERING_DATE_TIME','EXAM_BEGUN_DATE','EXAM_ENDED_DATE','EXAM_FINAL_DATE']);
   const rows = rawRows.map(r => {
     const rowArray = targetColumns.map(() => null);
     headers.forEach((h, i) => {
       const col = headerMap[i];
       if (!col) return;
       const targetIndex = targetColumns.indexOf(col);
-      if (targetIndex >= 0) rowArray[targetIndex] = r[h];
+      if (targetIndex >= 0) {
+        let val = r[h];
+        // Normalize dates for known date columns
+        if (val != null && dateColumns.has(col)) {
+          // If xlsx gave JS Date objects (raw: true) or strings (raw: false), handle both
+          val = parseExcelDateString(val);
+        }
+        rowArray[targetIndex] = val;
+      }
     });
     return rowArray;
   });

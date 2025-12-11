@@ -3,6 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import DashboardToggle from '../../components/DashboardToggle';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
+
+const ResidencyAnalyticsWrapper = dynamic(() => import('../../components/ResidencyAnalytics'), { ssr: false });
+const StudiesTimeSeriesWrapper = dynamic(() => import('../../components/StudiesTimeSeries'), { ssr: false });
 
 export default function AdminRprPage() {
   const router = useRouter();
@@ -38,7 +42,7 @@ export default function AdminRprPage() {
             <h1 style={{ fontSize: 32, fontWeight: 700, color: '#000', margin: '0 0 8px 0' }}>RPR Attending Dashboard</h1>
             <div style={{ marginTop: 6 }}>
               {currentUser ? (
-                <div style={{ color: '#666', fontSize: 16, fontWeight: 400 }}>{`Welcome to your RPR hub, Dr. ${((currentUser as any)?.preferred_name && String((currentUser as any).preferred_name).trim()) ? String((currentUser as any).preferred_name).trim() : (currentUser.first_name ?? '')} ${currentUser.last_name ?? ''}!`}</div>
+                <div style={{ color: '#666', fontSize: 16, fontWeight: 400 }}>{`Welcome to your hub for reviewing trainee RPR scores, Dr. ${((currentUser as any)?.preferred_name && String((currentUser as any).preferred_name).trim()) ? String((currentUser as any).preferred_name).trim() : (currentUser.first_name ?? '')} ${currentUser.last_name ?? ''}!`}</div>
               ) : (
                 <div style={{ color: '#666', fontSize: 16 }}>RPR Attending Dashboard</div>
               )}
@@ -94,9 +98,25 @@ export default function AdminRprPage() {
           </div>
         </div>
 
-        {/* Body removed — header only per request */}
-        <div style={{ background: '#fff', borderRadius: 12, padding: 24, minHeight: 240, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-          {/* Intentionally left blank — RPR admin UI will be built here. */}
+        {/* Residency analytics placeholder - two charts side-by-side (responsive) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18 }}>
+          <div style={{ height: 420, display: 'flex', flexDirection: 'column' }}>
+            {/* Residency-wide analytics (counts + disagree rate) */}
+            {/* Lazy client component */}
+            <div style={{ flex: 1 }}>
+              {/* Import done below to avoid server/client mismatch */}
+              {/* @ts-ignore */}
+              <ResidencyAnalyticsWrapper />
+            </div>
+          </div>
+
+          <div style={{ height: 420, display: 'flex', flexDirection: 'column' }}>
+            {/* Studies time-series (reports over time) */}
+            <div style={{ flex: 1 }}>
+              {/* @ts-ignore */}
+              <StudiesTimeSeriesWrapper />
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -516,7 +516,7 @@ export default function Dashboard() {
             datasets: [
                 {
                     label: 'Average EPA Score',
-                    data: Object.values(procTypeStats).map(stat => Number(stat.total.toFixed(1))),
+                    data: Object.values(procTypeStats).map(stat => Number(stat.total.toFixed(2))),
                     // attach descriptions and counts for tooltip callbacks
                     descriptions,
                     counts,
@@ -880,8 +880,8 @@ export default function Dashboard() {
                                     {loading
                                         ? '...'
                                         : typeof stats.avg_epa === 'number' && !isNaN(stats.avg_epa)
-                                            ? stats.avg_epa.toFixed(1)
-                                            : '0.0'}
+                                            ? stats.avg_epa.toFixed(2)
+                                            : '0.00'}
                                 </div>
                                 <div style={{ fontSize: 12, color: '#000', fontWeight: 600, textTransform: 'uppercase' }}>
                                     Current Adjusted EPA<br />Average
@@ -1253,19 +1253,7 @@ export default function Dashboard() {
                             <KeyPerformanceMetrics procedures={procedures} loading={loading} />
                         </div>
 
-                        {/* Seek Feedback Rate Trends */}
-                        <div style={{
-                            background: '#fff',
-                            borderRadius: 12,
-                            padding: 24,
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                            flex: 1,
-                        }}>
-                            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 16, color: '#000' }}>
-                                Seek Feedback Rate Trends
-                            </div>
-                            <SeekFeedbackChart procedures={procedures} loading={loading} height={350} />
-                        </div>
+                        {/* Seek Feedback Rate Trends component removed from trainee dashboard (component retained) */}
                     </div>
                 </div>
                 {/* Profile Edit Modal */}

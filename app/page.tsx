@@ -28,7 +28,9 @@ export default function LoginPage() {
                         const meJson = await meRes.json();
                         const role = meJson?.user?.role;
                             if (role === 'attending') {
-                                router.push('/adminepa');
+                                // If the user selected RPR on the login form, send attendings to admin RPR dashboard
+                                if (preferredDashboard === 'rprdash') router.push('/adminrpr');
+                                else router.push('/adminepa');
                             } else {
                                 // route to the dashboard the user selected on the login form
                                 if (preferredDashboard === 'rprdash') router.push('/rprdash');

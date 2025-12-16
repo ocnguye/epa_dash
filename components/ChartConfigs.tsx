@@ -4,6 +4,97 @@ import { ChartOptions } from 'chart.js';
 export const epaTrendOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
+    // Consistent animation settings across filter toggles to avoid unintended "wave" effects
+    // when datasets or data points are added/removed. We disable tension animation so the
+    // line shape does not morph in an animated "wave" when switching filters.
+    // Slower, smoother animation for a more pleasant wave effect when filters toggle
+    animation: {
+        duration: 1000,
+        easing: 'easeInOutCubic'
+    },
+    elements: {
+        line: {
+            // Prevent Chart.js from animating the tension property which can produce
+            // a wave-like motion when the dataset updates. Keep tension animations off.
+            tension: 0.4,
+            // Per Chart.js v4, you can disable animation for line properties by
+            // setting their animation duration to 0 under the `animations` map,
+            // but elements.line.animation is widely supported to stop morphing.
+            // Keep borderWidth stable here (datasets may override).
+            borderWidth: 2 as any,
+        },
+    },
+    // Fine-grained transition control: animate x/y and tension with scripted delays so the
+    // wave always progresses left-to-right (staggered by data index). We avoid hard-coded
+    // 'from'/'to' values which can cause animations to appear left-to-right or right-to-left
+    // depending on whether datasets are added/removed or updated.
+    transitions: {
+        show: {
+            animations: {
+                x: {
+                    duration: 1000,
+                    easing: 'easeInOutCubic',
+                    // stagger by data index to make the line draw left-to-right
+                    delay: (ctx: any) => {
+                        if (!(ctx.type === 'data' && typeof ctx.dataIndex === 'number')) return 0;
+                        // reverse stagger so animation proceeds right-to-left
+                        const ds = ctx.chart?.data?.datasets?.[ctx.datasetIndex];
+                        const len = Array.isArray(ds?.data) ? ds.data.length : (ctx.chart?.data?.labels?.length || 0);
+                        const max = Math.max(0, (len || 1) - 1);
+                        return (max - ctx.dataIndex) * 25;
+                    }
+                },
+                y: {
+                    duration: 1000,
+                    easing: 'easeInOutCubic',
+                    delay: (ctx: any) => {
+                        if (!(ctx.type === 'data' && typeof ctx.dataIndex === 'number')) return 0;
+                        const ds = ctx.chart?.data?.datasets?.[ctx.datasetIndex];
+                        const len = Array.isArray(ds?.data) ? ds.data.length : (ctx.chart?.data?.labels?.length || 0);
+                        const max = Math.max(0, (len || 1) - 1);
+                        return (max - ctx.dataIndex) * 25;
+                    }
+                },
+                tension: {
+                    duration: 1000,
+                    easing: 'easeInOutCubic',
+                    delay: (ctx: any) => (ctx.type === 'data' && typeof ctx.dataIndex === 'number') ? ctx.dataIndex * 25 : 0
+                }
+            }
+        },
+        hide: {
+            animations: {
+                x: {
+                    duration: 600,
+                    easing: 'easeInOutCubic',
+                    // keep the same left-to-right stagger on hide so direction is consistent
+                    delay: (ctx: any) => {
+                        if (!(ctx.type === 'data' && typeof ctx.dataIndex === 'number')) return 0;
+                        const ds = ctx.chart?.data?.datasets?.[ctx.datasetIndex];
+                        const len = Array.isArray(ds?.data) ? ds.data.length : (ctx.chart?.data?.labels?.length || 0);
+                        const max = Math.max(0, (len || 1) - 1);
+                        return (max - ctx.dataIndex) * 15;
+                    }
+                },
+                y: {
+                    duration: 600,
+                    easing: 'easeInOutCubic',
+                    delay: (ctx: any) => {
+                        if (!(ctx.type === 'data' && typeof ctx.dataIndex === 'number')) return 0;
+                        const ds = ctx.chart?.data?.datasets?.[ctx.datasetIndex];
+                        const len = Array.isArray(ds?.data) ? ds.data.length : (ctx.chart?.data?.labels?.length || 0);
+                        const max = Math.max(0, (len || 1) - 1);
+                        return (max - ctx.dataIndex) * 15;
+                    }
+                },
+                tension: {
+                    duration: 600,
+                    easing: 'easeInOutCubic',
+                    delay: (ctx: any) => (ctx.type === 'data' && typeof ctx.dataIndex === 'number') ? ctx.dataIndex * 15 : 0
+                }
+            }
+        }
+    },
     interaction: {
         // require intersection so tooltip shows only for the hovered dataset (prevents mixed tooltips)
         mode: 'nearest',

@@ -145,7 +145,9 @@ export default function Dashboard() {
     // Chart container ref + dynamic tab sizing
     const chartContainerRef = useRef<HTMLDivElement | null>(null);
     const [chartContainerWidth, setChartContainerWidth] = useState<number>(0);
-    const tabs = ['EPA TREND', 'COMPLEXITY VS EPA', 'PROCEDURE-SPECIFIC EPA', 'PROCEDURE COUNTS'];
+    const [chartInnerLeft, setChartInnerLeft] = useState<number>(0);
+    const [chartInnerWidth, setChartInnerWidth] = useState<number>(0);
+    const tabs = ['EPA TREND', 'PROCEDURE-SPECIFIC EPA', 'PROCEDURE COUNTS'];
     const tabOverlap = 12; // pixels of overlap between adjacent tabs
 
     useEffect(() => {
@@ -154,24 +156,61 @@ export default function Dashboard() {
             if (el) setChartContainerWidth(el.clientWidth || 0);
             return;
         }
+
+        const compute = (target: HTMLElement) => {
+            try {
+                const style = window.getComputedStyle(target);
+                const pl = parseFloat(style.paddingLeft || '0') || 0;
+                const pr = parseFloat(style.paddingRight || '0') || 0;
+                const parent = target.parentElement as HTMLElement | null;
+                const parentRect = parent ? parent.getBoundingClientRect() : { left: 0 } as DOMRect;
+                const rect = target.getBoundingClientRect();
+                // left relative to positioned parent + left padding so tabs sit flush with content
+                const left = Math.max(0, Math.floor(rect.left - parentRect.left + pl));
+                const innerW = Math.max(0, Math.floor(target.clientWidth - pl - pr));
+                setChartInnerLeft(left);
+                setChartInnerWidth(innerW);
+                setChartContainerWidth(Math.floor(target.clientWidth));
+            } catch (err) {
+                setChartInnerLeft(target.offsetLeft || 0);
+                setChartInnerWidth(target.clientWidth || 0);
+                setChartContainerWidth(target.clientWidth || 0);
+            }
+        };
+
         // observe size changes
         const ro = new ResizeObserver(entries => {
             for (const entry of entries) {
-                const w = entry.contentRect.width;
-                setChartContainerWidth(Math.floor(w));
+                const target = entry.target as HTMLElement;
+                compute(target);
             }
         });
         ro.observe(el);
-        // initial
-        setChartContainerWidth(el.clientWidth || 0);
+        // initial measurement
+        compute(el);
         return () => ro.disconnect();
     }, [chartContainerRef]);
 
-    const computedTabWidth = (() => {
+    const { baseTabWidth, lastTabWidth, containerWidthForTabs } = (() => {
         const count = tabs.length;
-        if (!count || !chartContainerWidth) return 200;
-        const totalVisible = chartContainerWidth + tabOverlap * (count - 1);
-        return Math.max(100, Math.floor(totalVisible / count));
+        // Use the inner content width so tabs line up with the chart content area
+        if (!count || !chartInnerWidth) return { baseTabWidth: 200, lastTabWidth: 200, containerWidthForTabs: 200 };
+        // Calculate tab width so the visible group of overlapped tabs exactly fills
+        // the chart inner content width. With per-tab width W and overlap O, the
+        // total occupied width = count*W - (count-1)*O. Solve for W:
+        // W = (chartInnerWidth + (count-1)*O) / count
+        const overlapTotal = tabOverlap * (count - 1);
+        const raw = (chartInnerWidth + overlapTotal) / count;
+        const base = Math.floor(raw);
+        // Distribute any leftover pixels across tabs to avoid a right-side gap
+        const occupied = count * base - overlapTotal;
+        const remainder = chartInnerWidth - occupied;
+        const extraPer = remainder > 0 ? Math.floor(remainder / count) : 0;
+        const lastExtra = remainder > 0 ? remainder - (extraPer * count) : 0;
+        const baseAdjusted = base + extraPer;
+        const last = baseAdjusted + lastExtra;
+        const min = 34; // allow compact tabs when many are present
+        return { baseTabWidth: baseAdjusted > min ? baseAdjusted : min, lastTabWidth: last > min ? last : min, containerWidthForTabs: chartInnerWidth };
     })();
     // Profile modal state
     const [showProfileModal, setShowProfileModal] = useState(false);
@@ -195,6 +234,25 @@ export default function Dashboard() {
             setError(err.message || 'Error loading dashboard');
         }
         setLoading(false);
+    };
+
+    // Fetch cohort average EPA for the selected procedure (or overall when proc not provided).
+    // This keeps the peer cohort line in the chart in sync with the procedure filter.
+    const fetchCohortAvg = async (proc?: string) => {
+        try {
+            const url = proc && proc !== 'all' ? `/api/dashboard?proc=${encodeURIComponent(proc)}` : '/api/dashboard';
+            const res = await fetch(url);
+            if (!res.ok) return;
+            const data = await res.json();
+            // Only update the cohort average field so we don't clobber trainee-specific stats
+            if (data && data.stats && typeof (data.stats as any).cohort_avg_epa !== 'undefined') {
+                setStats(prev => ({ ...prev, cohort_avg_epa: Number((data.stats as any).cohort_avg_epa) || 0 } as any));
+            }
+        } catch (e) {
+            // non-fatal; keep existing cohort avg
+            // eslint-disable-next-line no-console
+            console.error('Failed to fetch cohort average for procedure filter', e);
+        }
     };
 
     // Function to update procedure status (optional notes for feedback requests)
@@ -311,6 +369,13 @@ export default function Dashboard() {
     useEffect(() => {
         fetchDashboard();
     }, []);
+
+    // When the selected procedure filter changes, request a procedure-scoped cohort average
+    // so the peer cohort line reflects the filter.
+    useEffect(() => {
+        // Only update cohort average (server will return overall when proc omitted)
+        fetchCohortAvg(selectedProcedure);
+    }, [selectedProcedure]);
 
     const feedbackRate = stats.total_procedures ? (stats.feedback_requested / stats.total_procedures) * 100 : 0;
 
@@ -457,7 +522,7 @@ export default function Dashboard() {
                 backgroundColor: 'rgba(255, 226, 108, 0.12)',
                 borderWidth: 2,
                 fill: false,
-                tension: 0.2,
+                tension: 0.4,
                 borderDash: [6, 4],
                 // remove visible points on the cohort line but keep a generous hover/hit area
                 pointRadius: 0,
@@ -668,12 +733,7 @@ export default function Dashboard() {
                         <Line data={chartData.epaTrend} options={epaOptions} />
                     </div>
                 );
-            case 'COMPLEXITY VS EPA':
-                return (
-                    <div style={{ height: 280 }}>
-                        <Scatter data={chartData.complexityVsEpa} options={complexityVsEpaOptions} />
-                    </div>
-                );
+            /* Complexity vs EPA tab hidden for now - component retained for future use */
             case 'PROCEDURE-SPECIFIC EPA':
                 return (
                     <div style={{ height: 280 }}>
@@ -1079,8 +1139,14 @@ export default function Dashboard() {
                             <div style={{
                                 position: 'absolute',
                                 top: 0,
-                                left: 0,
+                                left: chartInnerLeft,
+                                // keep the tab row left-bound: allow its width to be determined
+                                // by the tab buttons and prevent automatic centering
+                                width: 'auto',
+                                maxWidth: chartInnerWidth,
                                 display: 'flex',
+                                justifyContent: 'flex-start',
+                                marginLeft: 0,
                                 zIndex: 1, // Behind chart container
                             }}>
                                 {tabs.map((tab, index) => (
@@ -1090,7 +1156,7 @@ export default function Dashboard() {
                                         style={{
                                             background: activeTab === tab ? '#6b7280' : '#e5e7fa',
                                             color: activeTab === tab ? '#ffffffff' : '#000000',
-                                            width: computedTabWidth,
+                                            width: index === tabs.length - 1 ? lastTabWidth : baseTabWidth,
                                             height: 40,
                                             border: '1px solid rgba(107, 114, 128, 0.5)',
                                             borderRadius: '8px 8px 0 0', // Only top corners rounded
@@ -1107,6 +1173,7 @@ export default function Dashboard() {
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
+                                            boxSizing: 'border-box',
                                             overflow: 'hidden',
                                             whiteSpace: 'nowrap',
                                             textOverflow: 'ellipsis'

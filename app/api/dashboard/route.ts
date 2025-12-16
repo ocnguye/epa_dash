@@ -135,12 +135,15 @@ export async function GET(req: NextRequest) {
             total_reports: Number(stats.total_reports) || 0,
         };
 
-        // Compute anonymized cohort average EPA for the user's peer cohort (by PGY) when available
+        // Compute anonymized cohort average EPA for the user's peer cohort (by PGY) when available.
+        // If a `proc` query parameter is passed, filter cohort reports to that procedure (applies
+        // a LIKE match against ProcedureCodeList and ProcedureDescList). This allows the client
+        // to request a procedure-specific cohort average (used for the peer cohort line on charts).
         let cohortAvg = 0;
         try {
             if (user.pgy !== null) {
-                const [cohortRows] = await connection.execute(
-                    `SELECT COALESCE(ROUND(AVG(es2.epa_score), 2), 0) AS cohort_avg_epa
+                const procFilter = (req.nextUrl && req.nextUrl.searchParams) ? req.nextUrl.searchParams.get('proc') : null;
+                let cohortSql = `SELECT COALESCE(ROUND(AVG(es2.epa_score), 2), 0) AS cohort_avg_epa
                      FROM reports r
                      LEFT JOIN users u ON (
                         r.trainee = u.user_id
@@ -149,9 +152,16 @@ export async function GET(req: NextRequest) {
                      )
                      LEFT JOIN report_participants rp2 ON rp2.report_id = r.ReportID AND rp2.role = 'trainee'
                      LEFT JOIN epa_scores es2 ON es2.report_participant_id = rp2.id
-                     WHERE u.pgy = ? AND u.user_id != ?`,
-                    [user.pgy, user_id]
-                );
+                     WHERE u.pgy = ? AND u.user_id != ?`;
+                const cohortParams: any[] = [user.pgy, user_id];
+                if (procFilter && String(procFilter).trim() !== '' && String(procFilter) !== 'all') {
+                    // Use LIKE matching for the procedure filter
+                    cohortSql += ` AND (r.ProcedureCodeList LIKE ? OR r.ProcedureDescList LIKE ?)`;
+                    const likeVal = `%${String(procFilter).trim()}%`;
+                    cohortParams.push(likeVal, likeVal);
+                }
+
+                const [cohortRows] = await connection.execute(cohortSql, cohortParams as any);
                 const crow = (cohortRows as any[])[0];
                 cohortAvg = crow ? Number(crow.cohort_avg_epa) || 0 : 0;
             }

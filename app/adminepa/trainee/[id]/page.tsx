@@ -29,11 +29,11 @@ export default function TraineePage() {
 
   useEffect(() => {
     if (!resolvedId) return;
-    const load = async () => {
+        const load = async () => {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/adminepa/trainees/${resolvedId}`);
+        const res = await fetch(`/api/adminepa/trainees/${resolvedId}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           setError(body?.message || 'Failed to load trainee');

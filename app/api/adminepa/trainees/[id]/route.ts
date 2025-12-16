@@ -9,7 +9,9 @@ const getConnection = async () => mysql.createConnection({
 });
 
 export async function GET(req: NextRequest, context: any) {
+    // In some Next.js versions `context.params` may be a Promise. Await if needed.
     const { params } = context || {};
+    const resolvedParams = params && typeof (params as any).then === 'function' ? await params : params;
     try {
         const username = req.cookies.get('username')?.value;
         if (!username) return NextResponse.json({ success: false, message: 'Not authenticated' }, { status: 401 });
@@ -28,7 +30,7 @@ export async function GET(req: NextRequest, context: any) {
             return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
         }
 
-        const traineeId = Number(params.id);
+    const traineeId = Number(resolvedParams?.id);
         if (!Number.isFinite(traineeId) || traineeId <= 0) {
             await connection.end();
             return NextResponse.json({ success: false, message: 'Invalid trainee id' }, { status: 400 });

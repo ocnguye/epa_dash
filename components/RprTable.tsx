@@ -67,21 +67,19 @@ export default function RprTable({ rows }: { rows: Row[] }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', color: '#0f172a', tableLayout: 'fixed', fontSize: 13 }}>
           <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.04)', borderTopLeftRadius: 12, borderTopRightRadius: 12 }}>
             <tr>
-              <th style={{ padding: '6px 8px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 80 }}>
-                Accession
-              </th>
+              {/* Accession removed from RPR dashboards - column intentionally omitted */}
 
               {/* FIXED PROCEDURE WIDTH */}
               <th style={{ padding: '6px 4px 6px 8px', textAlign: 'left', color: '#495057', fontWeight: 600,
-                borderBottom: '1px solid #dee2e6', width: 200 }}>
+                borderBottom: '1px solid #dee2e6', width: 260 }}>
                 Procedure
               </th>
 
-              <th style={{ padding: '6px 8px 6px 4px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 120 }}>
+              <th style={{ padding: '6px 8px 6px 4px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 200 }}>
                 Trainee
               </th>
 
-              <th style={{ padding: '6px 8px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 60 }}>
+              <th style={{ padding: '6px 8px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 80 }}>
                 RPR
               </th>
             </tr>
@@ -90,10 +88,6 @@ export default function RprTable({ rows }: { rows: Row[] }) {
           <tbody>
             {displayedRows.map((r, i) => (
               <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <td style={{ padding: '6px 8px', verticalAlign: 'top', width: 80 }}>
-                  {r.accession ?? ''}
-                </td>
-
                 {/* MATCH PROCEDURE WIDTH */}
                 <td style={{
                   padding: '6px 4px 6px 8px',
@@ -101,12 +95,12 @@ export default function RprTable({ rows }: { rows: Row[] }) {
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  width: 200
+                  width: 260
                 }}>
                   {r.procedure_name ?? ''}
                 </td>
 
-                <td style={{ padding: '6px 8px 6px 4px', verticalAlign: 'top', width: 120 }}>
+                <td style={{ padding: '6px 8px 6px 4px', verticalAlign: 'top', width: 200 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 0, lineHeight: 1.05 }}>
                     <span style={{ fontWeight: 600, color: '#111827', fontSize: 13, lineHeight: 1 }}>
                       {r.trainee_name ?? r.first_resident ?? ''}
@@ -116,8 +110,7 @@ export default function RprTable({ rows }: { rows: Row[] }) {
                     </span>
                   </div>
                 </td>
-
-                <td style={{ padding: '6px 8px', verticalAlign: 'top', textAlign: 'center', width: 60 }}>
+                <td style={{ padding: '6px 8px', verticalAlign: 'top', textAlign: 'center', width: 80 }}>
                   {typeof r.rpr_number_value === 'number' ? r.rpr_number_value : ''}
                 </td>
               </tr>

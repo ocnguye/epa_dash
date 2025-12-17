@@ -54,6 +54,18 @@ export default function KeyPerformanceMetrics({ procedures, loading }: { procedu
     // Per-case list (most recent 20)
     const [recentFilter, setRecentFilter] = useState<string>('all');
 
+    // toggle for combined averages view: 'name' = procedure description, 'code' = procedure code
+    const [viewMode, setViewMode] = useState<'name' | 'code'>('name');
+    // track whether focus is inside the toggle so we render a single outer focus ring
+    const [toggleFocusWithin, setToggleFocusWithin] = useState(false);
+    // compute indicator translate and box shadow so selection persists even when blur occurs
+    // For two items: indicator should match the button bounds (buttonWidth 56 + gap 6 = 62px)
+    const indicatorTranslate = viewMode === 'name' ? 'translateX(0px)' : 'translateX(62px)';
+    // Persist a subtle inset ring for the selected state; on focus, show a stronger outer glow
+    const indicatorBoxShadow = toggleFocusWithin
+        ? '0 6px 18px rgba(59,130,246,0.12), inset 0 0 0 1px rgba(59,130,246,0.18)'
+        : 'inset 0 0 0 1px rgba(59,130,246,0.14)';
+
     // Build a sorted copy of procedures, then apply recent filter and limit to 20
     const recentCases = useMemo(() => {
         if (!procedures || procedures.length === 0) return [] as Procedure[];
@@ -174,11 +186,13 @@ export default function KeyPerformanceMetrics({ procedures, loading }: { procedu
     const formatDays = (v?: number) => typeof v === 'number' ? `${v.toFixed(1)} days` : 'N/A';
 
     return (
-        <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', color: '#374151' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', color: '#374151', fontSize: 13 }}>
             <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 12, color: '#374151' }}>Key Performance Metrics</div>
 
-            {/* Per-case details */}
-            <div style={{ marginBottom: 16 }}>
+            {/* Metrics content: recent cases + averages. Make this a flex column so the
+                averages table can grow to fill available vertical space when the
+                right column is constrained. */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12, flex: '0 0 auto' }}>
                 <div style={{ fontWeight: 600, marginBottom: 8, color: 'rgba(55,65,81,0.95)' }}>Procedure Metrics Overview</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <div style={{ fontSize: 13, color: 'rgba(55,65,81,0.9)', fontWeight: 600 }}>Filter</div>
@@ -199,7 +213,7 @@ export default function KeyPerformanceMetrics({ procedures, loading }: { procedu
                                     WebkitAppearance: 'none',
                                     MozAppearance: 'none',
                                     appearance: 'none',
-                                    minWidth: 180
+                                    minWidth: 160
                                 }}
                             >
                                 {recentProcedureOptions.map(opt => (
@@ -211,14 +225,14 @@ export default function KeyPerformanceMetrics({ procedures, loading }: { procedu
                             </svg>
                         </div>
                     </div>
-                    <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #eef2ff', borderRadius: 6 }}>
+                    <div style={{ height: 300, overflowY: 'auto', border: '1px solid #eef2ff', borderRadius: 6, minWidth: 0 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead style={{ background: '#f8fafc' }}>
                             <tr>
                                 <th style={{ textAlign: 'left', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Date</th>
                                 <th style={{ textAlign: 'left', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Procedure</th>
-                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Fluoro</th>
-                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Dose</th>
+                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Fluoro Time</th>
+                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Fluoro Dose</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -236,7 +250,7 @@ export default function KeyPerformanceMetrics({ procedures, loading }: { procedu
                                 return (
                                     <tr key={(c as any).report_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                         <td style={{ padding: 8, color: 'rgba(55,65,81,0.85)' }}>{displayDate}</td>
-                                        <td style={{ padding: 8, color: 'rgba(55,65,81,0.85)' }}>{c.proc_desc || c.proc_code || 'Unknown'}</td>
+                                        <td title={c.proc_desc || c.proc_code || 'Unknown'} style={{ padding: 8, color: 'rgba(55,65,81,0.85)' }}>{c.proc_desc || c.proc_code || 'Unknown'}</td>
                                         <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{typeof fluoroMin === 'number' ? `${fluoroMin.toFixed(1)} min` : '—'}</td>
                                         <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{typeof dose === 'number' ? dose.toFixed(1) : '—'}</td>
                                     </tr>
@@ -247,53 +261,120 @@ export default function KeyPerformanceMetrics({ procedures, loading }: { procedu
                 </div>
             </div>
 
-            {/* Averages by procedure name */}
-            <div style={{ marginBottom: 16 }}>
-                <div style={{ fontWeight: 600, marginBottom: 8, color: 'rgba(55,65,81,0.95)' }}>Averages by Procedure</div>
-                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #eef2ff', borderRadius: 6 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead style={{ background: '#f8fafc' }}>
-                            <tr>
-                                <th style={{ textAlign: 'left', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Procedure</th>
-                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Avg Interval</th>
-                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Avg Fluoro</th>
-                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Avg Dose</th>
-                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Count</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {nameSummaries.map(s => (
-                                <tr key={s.name} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <td style={{ padding: 8, color: 'rgba(55,65,81,0.85)' }}>{s.name}</td>
-                                    <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{formatDays(s.avgIntervalDays)}</td>
-                                    <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{formatMinutes(s.avgFluoro)}</td>
-                                    <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{formatDose(s.avgDose)}</td>
-                                    <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{s.count}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+            {/* Combined averages table with toggle for Name / Code */}
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ fontWeight: 600, color: 'rgba(55,65,81,0.95)' }}>Averages by Procedure</div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <div style={{ fontSize: 13, color: 'rgba(55,65,81,0.8)', fontWeight: 600, marginRight: 6 }}>View</div>
+                        
+                        <div
+                            onFocusCapture={() => setToggleFocusWithin(true)}
+                            onBlurCapture={() => setToggleFocusWithin(false)}
+                            style={{
+                                position: 'relative',
+                                width: 128,
+                                height: 36,
+                                borderRadius: 9999,
+                                background: '#f3f4f6',
+                                border: '1px solid #e6e7eb',
+                                padding: 4,
+                                overflow: 'hidden',
+                                // show an outer glow on the wrapper when focused to aid keyboard users
+                                boxShadow: toggleFocusWithin ? '0 6px 18px rgba(59,130,246,0.08)' : undefined
+                            }}
+                        >
+                            {/* sliding indicator */}
+                            <div
+                                aria-hidden
+                                style={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '50%',
+                                    height: '100%',
+                                    borderRadius: 9999,
+                                    // consistent soft blue fill
+                                    background: 'rgba(59,130,246,0.12)',
+                                    border: 'none',
+                                    transition: 'transform 200ms cubic-bezier(.2,.9,.2,1)',
+                                    transform: viewMode === 'name' ? 'translateX(0%)' : 'translateX(100%)',
+                                    // inset ring to define the selected pill area
+                                    boxShadow: 'inset 0 0 0 1px rgba(59,130,246,0.14)'
+                                }}
+                            />
+                            <div style={{ position: 'relative', display: 'flex', gap: 6, zIndex: 2, height: '100%', alignItems: 'center', paddingLeft: 2 }}>
+                                <button
+                                    aria-pressed={viewMode === 'name'}
+                                    onClick={() => setViewMode('name')}
+                                    style={{
+                                        flex: 1,
+                                        height: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '6px 10px',
+                                        borderRadius: 9999,
+                                        border: 'none',
+                                        background: 'transparent',
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                        fontSize: 13,
+                                        color: viewMode === 'name' ? '#0f172a' : '#475569',
+                                        textAlign: 'center'
+                                    }}
+                                    // remove native focus outline so the pill-level focus ring is the only visible indicator
+                                    onFocus={(e) => e.currentTarget.style.outline = 'none'}
+                                    onBlur={(e) => e.currentTarget.style.outline = 'none'}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewMode('name'); } }}
+                                >
+                                    Name
+                                </button>
+                                <button
+                                    aria-pressed={viewMode === 'code'}
+                                    onClick={() => setViewMode('code')}
+                                    style={{
+                                        flex: 1,
+                                        height: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '6px 10px',
+                                        borderRadius: 9999,
+                                        border: 'none',
+                                        background: 'transparent',
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                        fontSize: 13,
+                                        color: viewMode === 'code' ? '#0f172a' : '#475569',
+                                        textAlign: 'center'
+                                    }}
+                                    onFocus={(e) => e.currentTarget.style.outline = 'none'}
+                                    onBlur={(e) => e.currentTarget.style.outline = 'none'}
+                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewMode('code'); } }}
+                                >
+                                    Code
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            {/* Averages by procedure code/type */}
-            <div>
-                <div style={{ fontWeight: 600, marginBottom: 8, color: 'rgba(55,65,81,0.95)' }}>Averages by Procedure Type (Code)</div>
-                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #eef2ff', borderRadius: 6 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid #eef2ff', borderRadius: 6 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                         <thead style={{ background: '#f8fafc' }}>
                             <tr>
-                                <th style={{ textAlign: 'left', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Code</th>
+                                <th style={{ textAlign: 'left', padding: 8, color: 'rgba(55,65,81,0.9)' }}>{viewMode === 'name' ? 'Procedure' : 'Code'}</th>
                                 <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Avg Interval</th>
-                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Avg Fluoro</th>
-                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Avg Dose</th>
+                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Avg Fluoro Time</th>
+                                <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Avg Fluoro Dose</th>
                                 <th style={{ textAlign: 'right', padding: 8, color: 'rgba(55,65,81,0.9)' }}>Count</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {codeSummaries.map(s => (
-                                <tr key={s.code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <td style={{ padding: 8, color: 'rgba(55,65,81,0.85)' }}>{s.code}</td>
+                            {(viewMode === 'name' ? nameSummaries : codeSummaries).map((s: any) => (
+                                <tr key={viewMode === 'name' ? s.name : s.code} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                    <td title={viewMode === 'name' ? s.name : s.code} style={{ padding: 8, color: 'rgba(55,65,81,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{viewMode === 'name' ? s.name : s.code}</td>
                                     <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{formatDays(s.avgIntervalDays)}</td>
                                     <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{formatMinutes(s.avgFluoro)}</td>
                                     <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{formatDose(s.avgDose)}</td>

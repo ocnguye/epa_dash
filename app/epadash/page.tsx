@@ -1210,14 +1210,13 @@ export default function Dashboard() {
                                             <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Procedure Code</th>
                                             <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Description</th>
                                             <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Status</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Complexity</th>
                                             <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>EPA</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {loading ? (
                                             <tr>
-                                                <td colSpan={7} style={{ textAlign: 'center', color: '#888', padding: '20px' }}>Loading...</td>
+                                                <td colSpan={6} style={{ textAlign: 'center', color: '#888', padding: '20px' }}>Loading...</td>
                                             </tr>
                                         ) : (
                                             procedures.map((proc) => (
@@ -1227,7 +1226,7 @@ export default function Dashboard() {
                                                         <div style={{ fontWeight: 600 }}>{proc.trainee_name}</div>
                                                         <div style={{ fontSize: 12, color: '#666' }}>{proc.attending_name}</div>
                                                     </td>
-                                                    <td style={{ padding: '8px 12px', color: '#000' }}>{truncateText(proc.proc_desc || proc.proc_code)}</td>
+                                                    <td style={{ padding: '8px 12px', color: '#000' }}>{proc.proc_code}</td>
                                                     <td style={{ padding: '8px 12px', color: '#000' }}>{proc.proc_desc}</td>
                                                     <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                                                         {(() => {
@@ -1272,9 +1271,6 @@ export default function Dashboard() {
                                                         })()}
                                                     </td>
                                                     <td style={{ padding: '8px 12px', color: '#000', textAlign: 'center', fontWeight: 600 }}
-                                                    title={getComplexityDescription(proc.complexity)}>
-                                                        {proc.complexity}</td>
-                                                    <td style={{ padding: '8px 12px', color: '#000', textAlign: 'center', fontWeight: 600 }}
                                                     title={getEPADescription(proc.oepa)}>
                                                         {proc.oepa}</td>
                                                 </tr>
@@ -1287,7 +1283,7 @@ export default function Dashboard() {
                     </div>
 
                     {/* Right Column: Progress Circle and Recent Feedback */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'stretch' }}>
                         {/* Large Progress Circle */}
                         <div style={{
                             padding: 24,
@@ -1316,7 +1312,7 @@ export default function Dashboard() {
                         </div>
 
                         {/* Key Performance Metrics (replaces recent feedback on trainee dashboard) */}
-                        <div>
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                             <KeyPerformanceMetrics procedures={procedures} loading={loading} />
                         </div>
 

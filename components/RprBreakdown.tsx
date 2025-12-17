@@ -241,10 +241,10 @@ export default function RprBreakdown({
       ) : rows.length === 0 ? (
         <div style={{ padding: 12, color: '#6b7280' }}>No data</div>
       ) : (
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', width: '100%', flex: 1, minHeight: 0 }}>
+  <div style={{ display: 'flex', gap: 16, alignItems: 'center', width: '100%', flex: 1, minHeight: 0 }}>
           {/* Pie (fixed) - increased size so chart is more prominent */}
-          <div style={{ flex: '0 0 360px', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: 8 }}>
-            <div style={{ width: 340, height: 340 }}>
+          <div style={{ flex: '0 0 360px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
+            <div style={{ width: 340, height: 340, margin: '0 auto' }}>
               <Pie data={data as any} options={options} />
             </div>
           </div>

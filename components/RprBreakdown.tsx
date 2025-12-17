@@ -139,6 +139,7 @@ export default function RprBreakdown({
         display: "flex",
         flexDirection: "column",
         width: "100%",
+        height: '100%',
       }}
     >
       {/* Header + Controls */}
@@ -240,16 +241,16 @@ export default function RprBreakdown({
       ) : rows.length === 0 ? (
         <div style={{ padding: 12, color: '#6b7280' }}>No data</div>
       ) : (
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', width: '100%' }}>
-          {/* Pie (fixed) */}
-          <div style={{ flex: '0 0 260px', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: 8 }}>
-            <div style={{ width: 240, height: 240 }}>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', width: '100%', flex: 1, minHeight: 0 }}>
+          {/* Pie (fixed) - increased size so chart is more prominent */}
+          <div style={{ flex: '0 0 360px', display: 'flex', alignItems: 'center', justifyContent: 'center', paddingRight: 8 }}>
+            <div style={{ width: 340, height: 340 }}>
               <Pie data={data as any} options={options} />
             </div>
           </div>
 
-          {/* List */}
-          <div style={{ flex: 1, maxHeight: 420, overflowY: 'auto', minWidth: 0 }}>
+          {/* List (shrink to remaining space) */}
+          <div style={{ flex: 1, overflowY: 'auto', minWidth: 0, minHeight: 0, maxHeight: 520 }}>
             {rows.map((r, i) => {
               const val = Number(r.disagree_count || r.total_with_rpr || 0);
               const pct = totalSum > 0 ? (val / totalSum) * 100 : 0;

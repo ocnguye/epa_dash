@@ -275,24 +275,23 @@ export default function RprDashPage() {
                             <div style={{ padding: 20, background: '#fff', borderRadius: 8, color: 'red' }}>{error}</div>
                         ) : (
                             <>
-                                {/* Summary removed as requested */}
-
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 12, alignItems: 'stretch', marginTop: 8 }}>
-                                        <div style={{ minWidth: 0, minHeight: 560, height: '100%' }}>
+                                    <div style={{ minWidth: 0, minHeight: 520, height: '100%' }}>
                                         <RprCohortChart score={cohortScore} />
                                     </div>
                                     <div style={{ minHeight: 560, height: '100%' }}>
                                         <RprRpr4Compare score={cohortScore} setScore={setCohortScore} />
                                     </div>
                                 </div>
-                                    <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '520px 1fr', gap: 12, alignItems: 'stretch' }}>
-                                        <div style={{ minHeight: 420, height: '100%' }}>
-                                <RprBreakdown />
-                                        </div>
-                                        <div style={{ minHeight: 420, height: '100%' }}>
-                                            <RprTable rows={filteredRows} />
-                                        </div>
+
+                                <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '720px 1fr', gap: 12, alignItems: 'stretch' }}>
+                                    <div style={{ minHeight: 560, height: '100%' }}>
+                                        <RprBreakdown />
                                     </div>
+                                    <div style={{ minHeight: 560, height: '100%' }}>
+                                        <RprTable rows={filteredRows} />
+                                    </div>
+                                </div>
                             </>
                         )}
                     </div>

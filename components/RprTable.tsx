@@ -17,6 +17,9 @@ type Row = {
 
 export default function RprTable({ rows }: { rows: Row[] }) {
   const [user, setUser] = useState<any | null>(null);
+  const [timeframe, setTimeframe] = useState<string>('all');
+  const [procedureFilter, setProcedureFilter] = useState<string>('');
+  const [rprFilter, setRprFilter] = useState<string>('all');
 
   useEffect(() => {
     let mounted = true;
@@ -59,9 +62,104 @@ export default function RprTable({ rows }: { rows: Row[] }) {
       return false;
     });
   }, [rows, user]);
+
+  // Apply table-only filters: timeframe, procedure name, and rpr score
+  const finalRows = useMemo(() => {
+    let out = (displayedRows || []).slice();
+
+    // timeframe filter
+    if (timeframe && timeframe !== 'all') {
+      const now = Date.now();
+      let ms = 0;
+      if (timeframe === '30d') ms = 30 * 24 * 60 * 60 * 1000;
+      else if (timeframe === '90d') ms = 90 * 24 * 60 * 60 * 1000;
+      else if (timeframe === '1y') ms = 365 * 24 * 60 * 60 * 1000;
+      if (ms > 0) {
+        out = out.filter((r) => {
+          const d = r.createdate ? Date.parse(String(r.createdate)) : NaN;
+          if (isNaN(d)) return false;
+          return now - d <= ms;
+        });
+      }
+    }
+
+    // procedure name filter (substring, case-insensitive)
+    if (procedureFilter && procedureFilter.trim() !== '') {
+      const q = procedureFilter.trim().toLowerCase();
+      out = out.filter((r) => (r.procedure_name || '').toString().toLowerCase().includes(q));
+    }
+
+    // rpr score filter
+    if (rprFilter && rprFilter !== 'all') {
+      const rv = Number(rprFilter);
+      out = out.filter((r) => Number(r.rpr_number_value) === rv);
+    }
+
+    return out;
+  }, [displayedRows, timeframe, procedureFilter, rprFilter]);
+
+  // derive unique procedure names for dropdown
+  const procedureOptions = useMemo(() => {
+    const set = new Set<string>();
+    (displayedRows || []).forEach((r) => {
+      const name = (r.procedure_name || '').toString().trim();
+      if (name) set.add(name);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [displayedRows]);
   return (
     <div style={{ background: '#fff', padding: 16, borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#111827' }}>Recent RPR Reports</div>
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'nowrap' }}>
+    <div style={{ fontWeight: 700, fontSize: 16, color: '#111827' }}>Recent RPR Reports</div>
+
+  <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', minWidth: 0, flexWrap: 'nowrap', marginLeft: 'auto' }}>
+          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+            <label htmlFor="rpr_table_timeframe" style={{ fontSize: 12, fontWeight: 700, marginRight: 8, color: '#374151' }}>Timeframe</label>
+            <select
+              id="rpr_table_timeframe"
+              value={timeframe}
+              onChange={(e) => setTimeframe(e.target.value)}
+              style={{ padding: '6px 22px 6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(175,213,240,0.06)', fontWeight: 700, fontSize: 13, color: '#374151', cursor: 'pointer', minWidth: 120, width: 'auto' }}
+            >
+              <option value="all">All</option>
+              <option value="30d">Last 30d</option>
+              <option value="90d">Last 90d</option>
+              <option value="1y">Last 1y</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+            <label htmlFor="rpr_table_proc" style={{ fontSize: 12, fontWeight: 700, marginRight: 8, color: '#374151' }}>Procedure</label>
+            <select
+              id="rpr_table_proc"
+              value={procedureFilter}
+              onChange={(e) => setProcedureFilter(e.target.value)}
+              style={{ padding: '6px 34px 6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(175,213,240,0.06)', fontWeight: 700, fontSize: 13, color: '#374151', minWidth: 160, maxWidth: 220, width: 'auto', flexShrink: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              <option value="">All</option>
+              {procedureOptions.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+            <label htmlFor="rpr_table_score" style={{ fontSize: 12, fontWeight: 700, marginRight: 8, color: '#374151' }}>RPR</label>
+            <select
+              id="rpr_table_score"
+              value={rprFilter}
+              onChange={(e) => setRprFilter(e.target.value)}
+              style={{ padding: '6px 22px 6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(175,213,240,0.06)', fontWeight: 700, fontSize: 13, color: '#374151', cursor: 'pointer', minWidth: 120, width: 'auto' }}
+            >
+              <option value="all">All</option>
+              <option value="1">RPR1</option>
+              <option value="2">RPR2</option>
+              <option value="3">RPR3</option>
+              <option value="4">RPR4</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'hidden', border: '1px solid #e9ecef', borderRadius: 12, background: '#fff', minHeight: 0 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', color: '#0f172a', tableLayout: 'fixed', fontSize: 13 }}>
@@ -85,7 +183,7 @@ export default function RprTable({ rows }: { rows: Row[] }) {
           </thead>
 
           <tbody>
-            {displayedRows.map((r, i) => (
+            {finalRows.map((r, i) => (
               <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 {/* MATCH PROCEDURE WIDTH */}
                 <td style={{

@@ -167,7 +167,7 @@ export default function RprBreakdown({
                 color: "#374151",
               }}
             >
-              Group
+              Type
             </label>
             <select
               id="groupby"

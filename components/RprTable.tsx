@@ -5,6 +5,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 type Row = {
   accession?: string | null;
   createdate?: string | null;
+  exam_final_date?: string | null;
   procedure_name?: string | null;
   first_resident?: string | null;
   trainee_name?: string | null;
@@ -17,7 +18,7 @@ type Row = {
 
 export default function RprTable({ rows }: { rows: Row[] }) {
   const [user, setUser] = useState<any | null>(null);
-  const [timeframe, setTimeframe] = useState<string>('all');
+  // timeframe/month filtering removed for table — show all reports for this trainee
   const [procedureFilter, setProcedureFilter] = useState<string>('');
   const [rprFilter, setRprFilter] = useState<string>('all');
 
@@ -33,6 +34,12 @@ export default function RprTable({ rows }: { rows: Row[] }) {
     return () => { mounted = false; };
   }, []);
 
+  useEffect(() => {
+    // timeframe/month UI removed for table — nothing to fetch here
+    return () => {};
+  }, []);
+
+  // (no months fetch here) keep timeframe as simple relative ranges
   const displayedRows = useMemo(() => {
     if (!user) return rows;
     const uid = Number(user.user_id);
@@ -63,25 +70,9 @@ export default function RprTable({ rows }: { rows: Row[] }) {
     });
   }, [rows, user]);
 
-  // Apply table-only filters: timeframe, procedure name, and rpr score
+  // Apply table-only filters: procedure name and rpr score
   const finalRows = useMemo(() => {
     let out = (displayedRows || []).slice();
-
-    // timeframe filter
-    if (timeframe && timeframe !== 'all') {
-      const now = Date.now();
-      let ms = 0;
-      if (timeframe === '30d') ms = 30 * 24 * 60 * 60 * 1000;
-      else if (timeframe === '90d') ms = 90 * 24 * 60 * 60 * 1000;
-      else if (timeframe === '1y') ms = 365 * 24 * 60 * 60 * 1000;
-      if (ms > 0) {
-        out = out.filter((r) => {
-          const d = r.createdate ? Date.parse(String(r.createdate)) : NaN;
-          if (isNaN(d)) return false;
-          return now - d <= ms;
-        });
-      }
-    }
 
     // procedure name filter (substring, case-insensitive)
     if (procedureFilter && procedureFilter.trim() !== '') {
@@ -96,7 +87,7 @@ export default function RprTable({ rows }: { rows: Row[] }) {
     }
 
     return out;
-  }, [displayedRows, timeframe, procedureFilter, rprFilter]);
+  }, [displayedRows, procedureFilter, rprFilter]);
 
   // derive unique procedure names for dropdown
   const procedureOptions = useMemo(() => {
@@ -113,20 +104,7 @@ export default function RprTable({ rows }: { rows: Row[] }) {
     <div style={{ fontWeight: 700, fontSize: 16, color: '#111827' }}>Recent RPR Reports</div>
 
   <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', minWidth: 0, flexWrap: 'nowrap', marginLeft: 'auto' }}>
-          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-            <label htmlFor="rpr_table_timeframe" style={{ fontSize: 12, fontWeight: 700, marginRight: 8, color: '#374151' }}>Timeframe</label>
-            <select
-              id="rpr_table_timeframe"
-              value={timeframe}
-              onChange={(e) => setTimeframe(e.target.value)}
-              style={{ padding: '6px 22px 6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(175,213,240,0.06)', fontWeight: 700, fontSize: 13, color: '#374151', cursor: 'pointer', minWidth: 120, width: 'auto' }}
-            >
-              <option value="all">All</option>
-              <option value="30d">Last 30d</option>
-              <option value="90d">Last 90d</option>
-              <option value="1y">Last 1y</option>
-            </select>
-          </div>
+          {/* timeframe removed for table; parent provides the trainee's rows */}
 
           <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
             <label htmlFor="rpr_table_proc" style={{ fontSize: 12, fontWeight: 700, marginRight: 8, color: '#374151' }}>Procedure</label>

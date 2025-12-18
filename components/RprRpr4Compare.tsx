@@ -48,11 +48,17 @@ export default function RprRpr4Compare({ score = 4, setScore }: { score?: number
     overflow: 'hidden'
   };
 
-  const barFill = (percent: number) => ({
-    height: '100%',
-    width: `${Math.max(0, Math.min(100, percent))}%`,
-    background: 'linear-gradient(90deg,#60a5fa,#3b82f6)',
-  } as React.CSSProperties);
+  const barFill = (percent: number, color: 'blue' | 'red' = 'blue') => {
+    const pct = `${Math.max(0, Math.min(100, percent))}%`;
+    const bg = color === 'blue'
+      ? 'linear-gradient(90deg,#60a5fa,#3b82f6)'
+      : 'linear-gradient(90deg,#fca5a5,#ef4444)';
+    return ({
+      height: '100%',
+      width: pct,
+      background: bg,
+    } as React.CSSProperties);
+  };
 
   return (
     <div style={{ padding: 12, background: '#fff', borderRadius: 8, boxShadow: '0 1px 4px rgba(0,0,0,0.04)', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -95,15 +101,26 @@ export default function RprRpr4Compare({ score = 4, setScore }: { score?: number
         </div>
       </div>
 
+      <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>
+        Compare the percentage of your reports at the selected RPR level to the corresponding percentage across all residents.
+            <ul style={{ fontSize: 13, color: '#374151', paddingLeft: 16 }}>
+                <li><strong>RPR 1:</strong> Agree </li>
+                <li><strong>RPR 2:</strong> Agree with Incidental Finding </li>
+                <li><strong>RPR 3:</strong> Agree </li>
+                <li><strong>RPR 4:</strong> Disagree with Preliminary Report </li>
+            </ul>
+
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
         <div style={{ fontSize: 13, color: '#444' }}>You</div>
         <div style={{ fontSize: 13, color: '#111', fontWeight: 700 }}>{Number(trainee.disagree_percent).toFixed(2)}%</div>
       </div>
       <div style={{ marginBottom: 12 }}>
         <div style={barContainerStyle}>
-          <div style={barFill(trainee.disagree_percent)} />
+          <div style={barFill(trainee.disagree_percent, 'blue')} />
         </div>
-        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{`${trainee.disagree_count} Reports / ${trainee.total_with_rpr} Total Reports with RPR`}</div>
+        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{`${trainee.disagree_count} Reports / ${trainee.total_with_rpr} Total Reports`}</div>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -112,9 +129,9 @@ export default function RprRpr4Compare({ score = 4, setScore }: { score?: number
       </div>
       <div style={{ marginBottom: 12 }}>
         <div style={barContainerStyle}>
-          <div style={barFill(overall.disagree_percent)} />
+          <div style={barFill(overall.disagree_percent, 'red')} />
         </div>
-        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{`${overall.disagree_count} Reports / ${overall.total_with_rpr} Total Reports with RPR`}</div>
+        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{`${overall.disagree_count} Reports / ${overall.total_with_rpr} Total Reports`}</div>
       </div>
     </div>
   );

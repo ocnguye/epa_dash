@@ -52,7 +52,10 @@ export async function GET(req: NextRequest) {
          r.FEEDBACK AS feedback,
          r.FIRST_RESIDENT AS first_resident,
          r.SIGNING_MD AS signing_md,
-         r.CREATEDATE AS createdate,
+         -- Return an ISO-like createdate string, coalescing to EXAM_FINAL_DATE when CREATEDATE is null
+         DATE_FORMAT(COALESCE(r.CREATEDATE, r.EXAM_FINAL_DATE), '%Y-%m-%dT%T') AS createdate,
+         -- Return EXAM_FINAL_DATE as an ISO-like string (or null)
+         DATE_FORMAT(r.EXAM_FINAL_DATE, '%Y-%m-%dT%T') AS exam_final_date,
          r.FinalReport AS final_report,
          r.rpr_number_raw AS rpr_number_raw,
          r.rpr_number_value AS rpr_number_value,
@@ -71,7 +74,7 @@ export async function GET(req: NextRequest) {
          OR r.trainee_id = ?
          OR r.FIRST_RESIDENT = CONCAT(?, ' ', ?)
        ) ${scoreFilter}
-       ORDER BY r.CREATEDATE DESC`,
+       ORDER BY COALESCE(r.CREATEDATE, r.EXAM_FINAL_DATE) DESC`,
       [userId, firstName, lastName, username, firstName, lastName]
     );
 

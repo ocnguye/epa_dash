@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, context: any) {
 
         // Load trainee basic info
         const [userRows] = await connection.execute(
-            `SELECT user_id, username, first_name, last_name, preferred_name, pgy, role FROM users WHERE user_id = ?`,
+            `SELECT user_id, username, first_name, last_name, preferred_name, pgy, role, specialty FROM users WHERE user_id = ?`,
             [traineeId]
         );
         const rawUser = Array.isArray(userRows) && (userRows as any)[0] ? (userRows as any)[0] : null;
@@ -55,6 +55,7 @@ export async function GET(req: NextRequest, context: any) {
             preferred_name: rawUser.preferred_name ? String(rawUser.preferred_name).trim() : null,
             pgy: typeof rawUser.pgy !== 'undefined' && rawUser.pgy !== null ? Number(rawUser.pgy) : null,
             role: rawUser.role ?? null,
+            specialty: rawUser.specialty ?? null,
         } as any;
 
         // Pull procedures for this trainee (similar to dashboard API) and compute seek_feedback per report

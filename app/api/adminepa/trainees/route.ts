@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
                 u.preferred_name,
                 u.pgy,
                 u.role,
+                u.specialty,
                      COALESCE(ROUND(AVG(es.epa_score),2),0) AS avg_epa,
                      COUNT(DISTINCT rp.report_id) AS report_count
                  FROM users u

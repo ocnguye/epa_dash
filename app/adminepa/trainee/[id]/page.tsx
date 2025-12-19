@@ -116,44 +116,61 @@ export default function TraineePage() {
 
   return (
     <div style={{ minHeight: '100vh', width: '100vw', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 24, boxSizing: 'border-box' }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{ background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#374151' }}>{user ? (user.preferred_name || `${user.first_name} ${user.last_name}`) : 'Trainee'}</h1>
-              <div style={{ color: '#374151', marginTop: 6 }}>{user ? `PGY ${user.pgy ?? ''} • ${user.role ?? ''}` : ''}</div>
+  <div style={{ width: '100%', margin: 0 }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1 style={{ fontSize: 32, fontWeight: 700, margin: '0 0 8px 0', color: '#000' }}>
+              {user ? (
+                // prefer a trainee's preferred/given name but always include last name
+                `Trainee Drill Down Page: ${((user as any)?.preferred_name && String((user as any).preferred_name).trim()) ? String((user as any).preferred_name).trim() + ' ' + (user.last_name || '') : `${user.first_name || ''} ${user.last_name || ''}`}`
+              ) : 'Trainee Drill Down Page'}
+            </h1>
+            <div style={{ color: '#666', fontSize: 16 }}>
+              {user ? (
+                <>
+                  <strong>Trainee:</strong>
+                  <span>{` ${((user as any)?.preferred_name && String((user as any).preferred_name).trim()) ? String((user as any).preferred_name).trim() : user.first_name} ${user.last_name}`}</span>
+                  <span>{' | '}</span>
+                  <strong>PGY:</strong>
+                  <span>{` ${(user as any)?.pgy != null ? (user as any).pgy : ''}`}</span>
+                  <span>{' | '}</span>
+                  <strong>Specialty:</strong>
+                  <span>{' Interventional Radiology'}</span>
+                </>
+              ) : (
+                'Loading user info...'
+              )}
             </div>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => router.push('/adminepa')} style={{ background: '#fff', color: '#374151', border: '1px solid rgba(55,65,81,0.08)', borderRadius: 8, padding: '10px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Back to Trainees</button>
-            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <button onClick={() => router.push('/adminepa')} style={{ background: '#fff', color: '#374151', border: '1px solid rgba(55,65,81,0.08)', borderRadius: 8, padding: '10px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Back to Trainees</button>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, marginTop: 18 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, marginTop: 18, alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20, height: '100%', minHeight: 0 }}>
+            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#374151' }}>Overall EPA Trajectory</div>
               {loading ? (
-                <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>
+                <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>
               ) : epaTrendData ? (
-                <div style={{ height: 280 }}>
+                <div style={{ flex: 1, minHeight: 120 }}>
                   <Line data={epaTrendData as any} options={epaTrendOptions as any} />
                 </div>
               ) : (
-                <div style={{ height: 160, color: '#6b7280' }}>No EPA data available</div>
+                <div style={{ flex: 1, minHeight: 120, color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>No EPA data available</div>
               )}
             </div>
-
-            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#374151' }}>Procedure-Specific EPA Progression</div>
               {loading ? (
-                <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>
+                <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>
               ) : procedureSpecificData ? (
-                <div style={{ height: 300 }}>
+                <div style={{ flex: 1, minHeight: 120 }}>
                   <Bar data={procedureSpecificData as any} options={procedureSpecificOptions as any} />
                 </div>
               ) : (
-                <div style={{ height: 160, color: '#6b7280' }}>No procedure-specific data</div>
+                <div style={{ flex: 1, minHeight: 120, color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>No procedure-specific data</div>
               )}
             </div>
           </div>
@@ -182,20 +199,24 @@ export default function TraineePage() {
               {procedureSpecificData ? (
                 <div>
                   <div style={{ marginBottom: 12, color: '#9CA3AF' }}><strong>Top Strengths</strong></div>
-                  {strengthsWeaknesses.strengths.length ? strengthsWeaknesses.strengths.map((s:any, idx:number) => (
-                    <div key={'s'+idx} style={{ padding: '8px 6px', borderBottom: '1px solid #f1f1f3' }}>
-                      <div style={{ fontWeight: 700, color: '#6b7280' }}>{s.desc || s.label}</div>
-                      <div style={{ color: '#9CA3AF', fontSize: 13 }}>{s.count} reports — avg EPA {s.avg}</div>
-                    </div>
-                  )) : <div style={{ color: '#6b7280' }}>No strengths identified</div>}
+                  <div aria-label="top-strengths-list" style={{ maxHeight: 220, overflowY: 'auto', paddingRight: 6 }}>
+                    {strengthsWeaknesses.strengths.length ? strengthsWeaknesses.strengths.map((s:any, idx:number) => (
+                      <div key={'s'+idx} style={{ padding: '8px 6px', borderBottom: '1px solid #f1f1f3' }}>
+                        <div style={{ fontWeight: 700, color: '#374151', fontSize: 13 }}>{s.desc || s.label}</div>
+                        <div style={{ color: '#374151', fontSize: 12 }}>{s.count} reports — avg EPA {s.avg}</div>
+                      </div>
+                    )) : <div style={{ color: '#6b7280', padding: '8px 6px' }}>No strengths identified</div>}
+                  </div>
 
                   <div style={{ marginTop: 12, marginBottom: 12, color: '#9CA3AF' }}><strong>Areas to Improve</strong></div>
-                  {strengthsWeaknesses.weaknesses.length ? strengthsWeaknesses.weaknesses.map((w:any, idx:number) => (
-                    <div key={'w'+idx} style={{ padding: '8px 6px', borderBottom: '1px solid #f1f1f3' }}>
-                      <div style={{ fontWeight: 700, color: '#6b7280' }}>{w.desc || w.label}</div>
-                      <div style={{ color: '#9CA3AF', fontSize: 13 }}>{w.count} reports — avg EPA {w.avg}</div>
-                    </div>
-                  )) : <div style={{ color: '#6b7280' }}>No areas identified</div>}
+                  <div aria-label="areas-to-improve-list" style={{ maxHeight: 220, overflowY: 'auto', paddingRight: 6 }}>
+                    {strengthsWeaknesses.weaknesses.length ? strengthsWeaknesses.weaknesses.map((w:any, idx:number) => (
+                      <div key={'w'+idx} style={{ padding: '8px 6px', borderBottom: '1px solid #f1f1f3' }}>
+                        <div style={{ fontWeight: 700, color: '#374151', fontSize: 13 }}>{w.desc || w.label}</div>
+                        <div style={{ color: '#374151', fontSize: 12 }}>{w.count} reports — avg EPA {w.avg}</div>
+                      </div>
+                    )) : <div style={{ color: '#6b7280', padding: '8px 6px' }}>No areas identified</div>}
+                  </div>
                 </div>
               ) : (
                 <div style={{ color: '#6b7280' }}>No procedure data to analyze</div>

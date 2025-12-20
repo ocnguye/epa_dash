@@ -106,55 +106,55 @@ export default function RprTable({ rows }: { rows: Row[] }) {
   <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', minWidth: 0, flexWrap: 'nowrap', marginLeft: 'auto' }}>
           {/* timeframe removed for table; parent provides the trainee's rows */}
 
-          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-            <label htmlFor="rpr_table_proc" style={{ fontSize: 12, fontWeight: 700, marginRight: 8, color: '#374151' }}>Procedure</label>
+          <div style={{ display: 'inline-flex', flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+            <label htmlFor="rpr_table_proc" style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>Procedure</label>
             <select
-              id="rpr_table_proc"
-              value={procedureFilter}
-              onChange={(e) => setProcedureFilter(e.target.value)}
-              style={{ padding: '6px 34px 6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(175,213,240,0.06)', fontWeight: 700, fontSize: 13, color: '#374151', minWidth: 160, maxWidth: 220, width: 'auto', flexShrink: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                id="rpr_table_proc"
+                value={procedureFilter}
+                onChange={(e) => setProcedureFilter(e.target.value)}
+                style={{ padding: '6px 34px 6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(175,213,240,0.06)', fontWeight: 700, fontSize: 13, color: '#374151', minWidth: 160, maxWidth: 220, width: 'auto', flexShrink: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             >
-              <option value="">All</option>
-              {procedureOptions.map((p) => (
+                <option value="">All</option>
+                {procedureOptions.map((p) => (
                 <option key={p} value={p}>{p}</option>
-              ))}
+                ))}
             </select>
-          </div>
+            </div>
 
-          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-            <label htmlFor="rpr_table_score" style={{ fontSize: 12, fontWeight: 700, marginRight: 8, color: '#374151' }}>RPR</label>
+            <div style={{ display: 'inline-flex', flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+            <label htmlFor="rpr_table_score" style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>RPR</label>
             <select
-              id="rpr_table_score"
-              value={rprFilter}
-              onChange={(e) => setRprFilter(e.target.value)}
-              style={{ padding: '6px 22px 6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(175,213,240,0.06)', fontWeight: 700, fontSize: 13, color: '#374151', cursor: 'pointer', minWidth: 120, width: 'auto' }}
+                id="rpr_table_score"
+                value={rprFilter}
+                onChange={(e) => setRprFilter(e.target.value)}
+                style={{ padding: '6px 22px 6px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(175,213,240,0.06)', fontWeight: 700, fontSize: 13, color: '#374151', cursor: 'pointer', minWidth: 120, width: 'auto' }}
             >
-              <option value="all">All</option>
-              <option value="1">RPR1</option>
-              <option value="2">RPR2</option>
-              <option value="3">RPR3</option>
-              <option value="4">RPR4</option>
+                <option value="all">All</option>
+                <option value="1">RPR1</option>
+                <option value="2">RPR2</option>
+                <option value="3">RPR3</option>
+                <option value="4">RPR4</option>
             </select>
-          </div>
+            </div>
         </div>
       </div>
 
-      <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'hidden', border: '1px solid #e9ecef', borderRadius: 12, background: '#fff', minHeight: 0 }}>
+      <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'hidden', border: '1px solid #e9ecef', borderRadius: 6, background: '#fff', minHeight: 0 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', color: '#0f172a', tableLayout: 'fixed', fontSize: 13 }}>
           <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.04)', borderTopLeftRadius: 12, borderTopRightRadius: 12 }}>
             <tr>
               {/* Accession removed from RPR dashboards - column intentionally omitted */}
 
               {/* FIXED PROCEDURE WIDTH */}
-              <th style={{ padding: '4px 6px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 200 }}>
+              <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 200 }}>
                 Procedure
               </th>
 
-              <th style={{ padding: '4px 6px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 160 }}>
+              <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 160 }}>
                 Trainee
               </th>
 
-              <th style={{ padding: '4px 6px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 60 }}>
+              <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6', width: 60 }}>
                 RPR
               </th>
             </tr>
@@ -165,7 +165,7 @@ export default function RprTable({ rows }: { rows: Row[] }) {
               <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
                 {/* MATCH PROCEDURE WIDTH */}
                 <td style={{
-                  padding: '4px 6px',
+                  padding: '8px 12px',
                   verticalAlign: 'top',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',

@@ -26,7 +26,7 @@ export default function StudiesTimeSeries() {
   const [months, setMonths] = useState<string[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [monthsLoading, setMonthsLoading] = useState(false);
-  const [score, setScore] = useState<number>(4);
+  
   const [rows, setRows] = useState<PointRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,9 +58,9 @@ export default function StudiesTimeSeries() {
   useEffect(() => {
     if (!selectedMonth) return;
     let mounted = true;
-    setLoading(true);
-    setError(null);
-    fetch(`/api/rpr/residency?month=${selectedMonth}&score=${score}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+  setLoading(true);
+  setError(null);
+  fetch(`/api/rpr/residency?month=${selectedMonth}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
       .then(r => r.json())
       .then((payload) => {
         if (!mounted) return;
@@ -74,7 +74,7 @@ export default function StudiesTimeSeries() {
       .finally(() => { if (mounted) setLoading(false); });
 
     return () => { mounted = false; };
-  }, [selectedMonth, score]);
+  }, [selectedMonth]);
 
   const labels = rows.map(r => r.label);
   const counts = rows.map(r => r.total_reports);
@@ -165,13 +165,7 @@ export default function StudiesTimeSeries() {
             )}
           </select>
 
-          <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginLeft: 8 }}>RPR</label>
-          <select value={String(score)} onChange={e => setScore(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #e6e6e6', fontSize: 13, color: '#374151', background: '#fff', height: 34 }}>
-            <option value={1}>RPR1</option>
-            <option value={2}>RPR2</option>
-            <option value={3}>RPR3</option>
-            <option value={4}>RPR4</option>
-          </select>
+          {/* RPR filter removed: time series shows overall data */}
         </div>
       </div>
 

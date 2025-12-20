@@ -96,6 +96,8 @@ export default function ResidencyAnalytics() {
         borderColor: '#afd5f0',
         borderWidth: 1,
         yAxisID: 'y',
+        // draw bars below lines
+        order: 1,
       },
       {
         type: 'line' as const,
@@ -107,6 +109,8 @@ export default function ResidencyAnalytics() {
         tension: 0.2,
         pointRadius: 4,
         borderWidth: 2,
+        // ensure the line renders above bars
+        order: 2,
       }
     ]
   };

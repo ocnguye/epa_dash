@@ -142,9 +142,11 @@ export default function AdminRprPage() {
                   fontSize: 14,
                   cursor: 'pointer',
                   boxShadow: activeTab === tab ? '0 -2px 6px rgba(0,0,0,0.18)' : '0 -1px 4px rgba(0,0,0,0.08)',
-                  // keep buttons in the low stacking context so the chart card can sit above
-                      position: 'relative',
-                      zIndex: 1,
+          // keep buttons in the low stacking context so the chart card can sit above
+            position: 'relative',
+            // ensure left tabs layer above right tabs by assigning higher z-index
+            // to tabs with lower index (i=0 on left). Keep values < chart zIndex (15).
+            zIndex: 5 + (tabs.length - i),
                 }}
               >
                 {tab}
@@ -171,7 +173,22 @@ export default function AdminRprPage() {
             }}
           >
             <div style={{ flex: 1, minHeight: 0 }}>
-              <div style={{ position: 'relative', zIndex: 15, marginTop: -(Math.round(measuredTabHeight - 8)), pointerEvents: 'auto' }}>
+              <div
+                style={{
+                  // keep wrapper the same width as the header container
+                  position: 'relative',
+                  zIndex: 15,
+                  marginTop: -(Math.round(measuredTabHeight - 8)),
+                  pointerEvents: 'auto',
+                  // expand this inner wrapper out by the same horizontal padding
+                  // used on the outer area (24px each side) so the chart card
+                  // lines up with the header. We offset back with a negative
+                  // left margin so the visual width matches the sibling header.
+                  width: 'calc(100% + 48px)',
+                  marginLeft: -24,
+                  boxSizing: 'border-box',
+                }}
+              >
                 {activeTab === 'Residency Analytics' && <ResidencyAnalyticsWrapper />}
                 {activeTab === 'Studies Time Series' && <StudiesTimeSeriesWrapper />}
               </div>

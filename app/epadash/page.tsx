@@ -134,7 +134,7 @@ export default function Dashboard() {
     const [procedures, setProcedures] = useState<Procedure[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [activeTab, setActiveTab] = useState('EPA TREND');
+    const [activeTab, setActiveTab] = useState('EPA Trend');
         const [timeframe, setTimeframe] = useState<'last_month' | 'last_6_months' | 'last_year' | 'all'>('all');
     // procedure filter for EPA Trend
     const [selectedProcedure, setSelectedProcedure] = useState<string>('all');
@@ -147,7 +147,7 @@ export default function Dashboard() {
     const [chartContainerWidth, setChartContainerWidth] = useState<number>(0);
     const [chartInnerLeft, setChartInnerLeft] = useState<number>(0);
     const [chartInnerWidth, setChartInnerWidth] = useState<number>(0);
-    const tabs = ['EPA TREND', 'PROCEDURE-SPECIFIC EPA', 'PROCEDURE COUNTS'];
+    const tabs = ['EPA Trend', 'Procedure-Specific EPA', 'Procedure Counts'];
     const tabOverlap = 12; // pixels of overlap between adjacent tabs
 
     useEffect(() => {
@@ -727,20 +727,20 @@ export default function Dashboard() {
         }
 
         switch (activeTab) {
-            case 'EPA TREND':
+            case 'EPA Trend':
                 return (
                     <div style={{ height: 280 }}>
                         <Line data={chartData.epaTrend} options={epaOptions} />
                     </div>
                 );
             /* Complexity vs EPA tab hidden for now - component retained for future use */
-            case 'PROCEDURE-SPECIFIC EPA':
+            case 'Procedure-Specific EPA':
                 return (
                     <div style={{ height: 280 }}>
                         <Bar data={chartData.procedureSpecific} options={procedureSpecificOptions} />
                     </div>
                 );
-            case 'PROCEDURE COUNTS':
+            case 'Procedure Counts':
                 return (
                     <div style={{ background: '#fff', padding: 16, borderRadius: 8 }}>
                         
@@ -778,8 +778,8 @@ export default function Dashboard() {
     return (
         <div
             style={{
-                minHeight: '100vh',
-                width: '100vw',
+            minHeight: '100vh',
+                width: '100%',
                 background: 'linear-gradient(135deg, #c8ceee 40%, #a7abde 100%)',
                 fontFamily: 'Ubuntu, sans-serif',
                 padding: 20,
@@ -787,7 +787,7 @@ export default function Dashboard() {
             }}
         >
             <div style={{
-                maxWidth: 'calc(100vw - 40px)',
+                maxWidth: '100%',
                 margin: '0 auto',
             }}>
                 {/* Header */}
@@ -998,7 +998,7 @@ export default function Dashboard() {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                                     <div style={{ fontWeight: 700, fontSize: 18, color: '#000' }}>{activeTab}</div>
                                     {/* Timeframe filter for EPA Trend chart */}
-                                    {activeTab === 'EPA TREND' && (
+                                    {activeTab === 'EPA Trend' && (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 <label htmlFor="procedure-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Procedure</label>
@@ -1066,7 +1066,7 @@ export default function Dashboard() {
                                         </div>
                                     )}
 
-                                    {activeTab === 'PROCEDURE COUNTS' && (
+                                    {activeTab === 'Procedure Counts' && (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 <label htmlFor="proc-counts-procedure-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Procedure</label>

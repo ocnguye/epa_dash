@@ -144,7 +144,7 @@ export default function RprDashPage() {
         <div
             style={{
                 minHeight: '100vh',
-                width: '100vw',
+                width: '100%',
                 background: 'linear-gradient(135deg, #c8ceee 40%, #a7abde 100%)',
                 fontFamily: 'Ubuntu, sans-serif',
                 padding: 20,

@@ -124,7 +124,7 @@ export default function AdminPage() {
     // Chart and table are rendered via encapsulated components below
 
     return (
-        <div style={{ minHeight: '100vh', width: '100vw', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 20, boxSizing: 'border-box' }}>
+        <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 20, boxSizing: 'border-box' }}>
         <div style={{ maxWidth: 'calc(100vw - 40px)', margin: '0 auto' }}>
             <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>

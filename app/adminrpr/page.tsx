@@ -62,7 +62,7 @@ export default function AdminRprPage() {
         fontFamily: 'Ubuntu, sans-serif',
       }}
     >
-      <div style={{ maxWidth: 'calc(100vw - 40px)', margin: '0 auto' }}>
+      <div style={{ maxWidth: '100%', margin: '0 auto' }}>
         {/* HEADER */}
         <div
           style={{

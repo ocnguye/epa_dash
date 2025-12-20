@@ -180,8 +180,8 @@ export default function StudiesTimeSeries() {
       ) : error ? (
         <div style={{ padding: 12, color: 'red' }}>{error}</div>
       ) : (
-        // Match ResidencyAnalytics: subtract header height so chart canvas gets same pixel height
-        <div style={{ height: 'calc(100% - 56px)', minHeight: 120 }}>
+        // Use a larger fixed viewport height so the chart fills the white area.
+        <div style={{ height: '60vh', minHeight: 240 }}>
           <Chart type='bar' data={data as any} options={options} />
         </div>
       )}

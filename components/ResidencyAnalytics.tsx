@@ -177,9 +177,9 @@ export default function ResidencyAnalytics() {
       ) : error ? (
         <div style={{ padding: 12, color: 'red' }}>{error}</div>
       ) : (
-        // Reserve space for the header/controls (approx 56px) so chart canvases
-        // across components get the same pixel height when parent column is fixed.
-        <div style={{ height: 'calc(100% - 56px)', minHeight: 120 }}>
+        // Reserve space for the header/controls (approx 56px).
+        // Use a larger fixed viewport height so the chart fills the white area.
+        <div style={{ height: '60vh', minHeight: 240 }}>
           <Chart type='bar' data={data as any} options={options} />
         </div>
       )}

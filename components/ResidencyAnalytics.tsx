@@ -15,6 +15,36 @@ import { Chart } from 'react-chartjs-2';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
+// Plugin: ensure any line datasets are re-drawn after other datasets so they
+// visually appear on top of bars (helps when bars create overlapping / z-order issues)
+const drawLineOnTopPlugin: any = {
+  id: 'drawLineOnTopPlugin',
+  afterDatasetsDraw: (chart: any) => {
+    const ctx = chart.ctx;
+    chart.data.datasets.forEach((ds: any, idx: number) => {
+      if (ds && (ds.type === 'line' || ds.type === 'scatter')) {
+        const meta = chart.getDatasetMeta(idx);
+        if (!meta || meta.hidden) return;
+        ctx.save();
+        // draw the line path element (dataset) and then its points so they sit on top
+        if (meta.dataset && typeof meta.dataset.draw === 'function') {
+          try { meta.dataset.draw(ctx); } catch (e) { /* ignore */ }
+        }
+        if (Array.isArray(meta.data)) {
+          meta.data.forEach((el: any) => {
+            if (el && typeof el.draw === 'function') {
+              try { el.draw(ctx); } catch (e) { /* ignore */ }
+            }
+          });
+        }
+        ctx.restore();
+      }
+    });
+  }
+};
+
+ChartJS.register(drawLineOnTopPlugin);
+
 type PointRow = {
   label: string; // YYYY-MM-DD
   total_reports: number;
@@ -89,10 +119,10 @@ export default function ResidencyAnalytics() {
     datasets: [
       {
         type: 'bar' as const,
-        label: 'Reports read',
+        label: 'Reports Read',
         data: counts,
-        // Match the cohort chart blue used for the "You" point (so visuals are consistent)
-        backgroundColor: 'rgba(175,213,240,0.9)',
+  // Match the StudiesTimeSeries blue (same color & opacity) so visuals are consistent
+  backgroundColor: 'rgba(175,213,240,0.6)',
         borderColor: '#afd5f0',
         borderWidth: 1,
         yAxisID: 'y',
@@ -104,11 +134,20 @@ export default function ResidencyAnalytics() {
         label: 'Disagree %',
         data: disagree,
         borderColor: 'rgba(255,226,108,0.95)', // yellow
-        backgroundColor: 'rgba(255,226,108,0.4)',
+        // Draw the line with no fill so it clearly overlays the bars.
+        // Keep a transparent backgroundColor in case Chart.js uses it for
+        // hover/fill calculations; we explicitly disable fill below.
+        backgroundColor: 'rgba(255,226,108,0.0)',
+        fill: false,
         yAxisID: 'y1',
         tension: 0.2,
         pointRadius: 4,
-        borderWidth: 2,
+        // make the stroke a bit bolder so it reads above the bars
+        borderWidth: 3,
+        // make point styling clear on top of bars
+        pointBackgroundColor: 'rgba(255,226,108,1)',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 1,
         // ensure the line renders above bars
         order: 2,
       }

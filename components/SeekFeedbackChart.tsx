@@ -101,7 +101,7 @@ const SeekFeedbackChart = ({ procedures, loading = false, height}: SeekFeedbackC
                     label: function(context) {
                         const weekData = weeklyStats[context.dataIndex];
                         return [
-                            `Seek Feedback Rate: ${context.parsed.y.toFixed(1)}%`,
+                            `Seek Feedback Rate: ${(context.parsed.y ?? 0).toFixed(1)}%`,
                             `Procedures with Feedback Requests: ${weekData.feedbackRequested}`,
                             `Total procedures: ${weekData.total}`
                         ];

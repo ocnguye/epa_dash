@@ -741,10 +741,12 @@ export default function Dashboard() {
                     </div>
                 );
             case 'Procedure Counts':
+                const firstDataIndex = procedureCounts.counts.findIndex(count => (count || 0) > 0);
+                const visibleLabels = firstDataIndex === -1 ? procedureCounts.labels : procedureCounts.labels.slice(firstDataIndex);
+                const visibleCounts = firstDataIndex === -1 ? procedureCounts.counts : procedureCounts.counts.slice(firstDataIndex);
+
                 return (
                     <div style={{ background: '#fff', padding: 16, borderRadius: 8 }}>
-                        
-
                         <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid rgba(175,213,240,0.2)', borderRadius: 6, background: 'rgba(175,213,240,0.02)' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', color: '#0f172a' }}>
                                 <thead style={{ background: 'rgba(175,213,240,0.08)', color: '#0f172a' }}>
@@ -754,14 +756,13 @@ export default function Dashboard() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {procedureCounts.labels.map((lbl, idx) => {
-                                        const display = (procedureCounts as any).displayLabels && (procedureCounts as any).displayLabels[idx]
-                                            ? (procedureCounts as any).displayLabels[idx]
-                                            : lbl;
+                                    {visibleLabels.map((lbl, idx) => {
+                                        const originalIdx = firstDataIndex === -1 ? idx : firstDataIndex + idx;
+                                        const display = (procedureCounts as any).displayLabels?.[originalIdx] ?? lbl;
                                         return (
                                             <tr key={lbl} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                                 <td style={{ padding: '8px 12px' }}>{display}</td>
-                                                <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>{procedureCounts.counts[idx] || 0}</td>
+                                                <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>{visibleCounts[idx] || 0}</td>
                                             </tr>
                                         );
                                     })}

@@ -555,10 +555,8 @@ export default function Dashboard() {
         const procTypeStats = filteredProcedures.reduce((acc, proc) => {
             const key = proc.proc_code || 'Unknown';
             if (!acc[key]) {
-                // keep a representative description for the procedure code (first seen)
                 acc[key] = { total: 0, sum: 0, count: 0, desc: proc.proc_desc } as any;
             }
-            // coerce oepa to a number and only include valid numeric EPAs in the average
             const oepaNum = Number(proc.oepa);
             const valid = Number.isFinite(oepaNum) && oepaNum > 0;
             if (valid) {
@@ -572,7 +570,14 @@ export default function Dashboard() {
             return acc;
         }, {} as Record<string, { total: number; sum: number; count: number; desc?: string }>);
 
-        const labels = Object.keys(procTypeStats);
+        const trimProcedureName = (name: string, maxLength = 20): string => {
+            const stripped = name.replace(/^\s*(IR|CT)\s+/i, '').trim();
+            return stripped.length > maxLength ? stripped.slice(0, maxLength - 1) + '…' : stripped;
+        };
+
+        const labels = Object.values(procTypeStats).map(stat =>
+            trimProcedureName(stat.desc || 'Unknown')
+        );
         const descriptions = Object.values(procTypeStats).map(stat => stat.desc || '');
         const counts = Object.values(procTypeStats).map(stat => stat.count || 0);
 
@@ -734,12 +739,26 @@ export default function Dashboard() {
                     </div>
                 );
             /* Complexity vs EPA tab hidden for now - component retained for future use */
-            case 'Procedure-Specific EPA':
+            case 'Procedure-Specific EPA': {
+                const barCount = chartData.procedureSpecific.labels?.length ?? 0;
+                const chartWidth = Math.max(barCount * 90, 600);
+                const containerWidth = chartInnerWidth || 600;
                 return (
-                    <div style={{ height: 280 }}>
-                        <Bar data={chartData.procedureSpecific} options={procedureSpecificOptions} />
+                    <div style={{ 
+                        width: containerWidth, 
+                        maxWidth: containerWidth,
+                        overflowX: 'auto', 
+                        overflowY: 'hidden' 
+                    }}>
+                        <div style={{ position: 'relative', width: chartWidth, height: 400 }}>
+                            <Bar
+                                data={chartData.procedureSpecific}
+                                options={procedureSpecificOptions}
+                            />
+                        </div>
                     </div>
                 );
+            }
             case 'Procedure Counts':
                 const firstDataIndex = procedureCounts.counts.findIndex(count => (count || 0) > 0);
                 const visibleLabels = firstDataIndex === -1 ? procedureCounts.labels : procedureCounts.labels.slice(firstDataIndex);

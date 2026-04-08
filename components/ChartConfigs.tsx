@@ -245,7 +245,6 @@ export const complexityVsEpaOptions: ChartOptions<'scatter'> = {
     }
 };
 
-// Procedure-Specific EPA Bar Chart Options
 export const procedureSpecificOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -297,15 +296,15 @@ export const procedureSpecificOptions: ChartOptions<'bar'> = {
                 text: 'Average EPA Score'
             }
         },
-        
         x: {
             title: {
                 display: true,
-                text: 'Procedure Codes'
+                text: 'Procedure Description'
             },
             ticks: {
                 maxRotation: 45,
-                minRotation: 0
+                minRotation: 45,
+                autoSkip: false,
             }
         }
     }

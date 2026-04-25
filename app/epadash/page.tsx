@@ -21,6 +21,7 @@ import {
     Title, 
     Tooltip, 
     Legend,
+    Filler, 
     ChartOptions 
 } from 'chart.js';
 import { useRouter } from 'next/navigation';

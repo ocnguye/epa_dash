@@ -5,6 +5,7 @@ import AdminCohortChart from '../../components/AdminCohortChart';
 import AdminTraineeTable from '../../components/AdminTraineeTable';
 import DashboardToggle from '../../components/DashboardToggle';
 import { useRouter } from 'next/navigation';
+import EvaluatorEPAGauge from '@/components/EvaluatorEPAGauge';
 
 type Trainee = {
     user_id: number;
@@ -33,6 +34,8 @@ export default function AdminPage() {
     const [filterPgy, setFilterPgy] = useState<string>('all');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const [sortBy, setSortBy] = useState<'avg_epa' | 'pgy' | 'reports'>('avg_epa');
+    const [evaluatorAvgEpa, setEvaluatorAvgEpa] = useState<number | null>(null);
+    const [evaluatorReportCount, setEvaluatorReportCount] = useState<number>(0);
 
     useEffect(() => {
         const load = async () => {
@@ -92,6 +95,13 @@ export default function AdminPage() {
                     } as Trainee;
                 });
                 setTrainees(normalized || []);
+                
+                const evalRes = await fetch('/api/adminepa');
+                    if (evalRes.ok) {
+                        const evalData = await evalRes.json();
+                        setEvaluatorAvgEpa(evalData.evaluator_avg_epa ?? null);
+                        setEvaluatorReportCount(evalData.evaluator_report_count ?? 0);
+                    }
             } catch (err: any) {
                 setError(err?.message || 'Server error');
             } finally {
@@ -436,14 +446,24 @@ export default function AdminPage() {
                     <div style={{ background: '#fff', padding: 24, borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', color: 'red' }}>{error}</div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {/* Chart widget (stacked) */}
-                        <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', width: '100%' }}>
-                            <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12 }}>Cohort EPA Comparison</div>
-                            <div style={{ width: '100%' }}>
+                        {/* Chart + Gauge side by side, gauge sits on the purple gradient */}
+                        <div style={{ display: 'flex', alignItems: 'stretch', gap: 16 }}>
+                            {/* White card: chart only — allow it to shrink */}
+                            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, overflow: 'hidden' }}>
+                                <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12 }}>Cohort EPA Comparison</div>
                                 <AdminCohortChart trainees={filtered} />
                             </div>
-                        </div>
 
+                            {/* Gauge wrapper — fixed 320px forces chart to shrink */}
+                            <div style={{ width: 320, flexShrink: 0, flexGrow: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <EvaluatorEPAGauge
+                                    evaluator_avg_epa={evaluatorAvgEpa}
+                                    evaluator_report_count={evaluatorReportCount}
+                                    loading={loading}
+                                />
+                            </div>
+                        </div>
+                        
                         {/* Table widget (stacked below) */}
                         <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', width: '100%' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>

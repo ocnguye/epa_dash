@@ -451,7 +451,11 @@ export default function AdminPage() {
                             {/* White card: chart only — allow it to shrink */}
                             <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, overflow: 'hidden' }}>
                                 <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12 }}>Cohort EPA Comparison</div>
-                                <AdminCohortChart trainees={filtered} />
+                                <AdminCohortChart 
+                                    trainees={filtered} 
+                                    allTrainees={trainees}
+                                    pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
+                                />
                             </div>
 
                             {/* Gauge wrapper — fixed 320px forces chart to shrink */}

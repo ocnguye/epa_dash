@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import AdminCohortChart from '../../components/AdminCohortChart';
 import AdminTraineeTable from '../../components/AdminTraineeTable';
+import CohortStrengthsWeaknesses from '../../components/CohortStrengthsWeaknesses';
 import DashboardToggle from '../../components/DashboardToggle';
 import { useRouter } from 'next/navigation';
 import EvaluatorEPAGauge from '@/components/EvaluatorEPAGauge';
@@ -468,12 +469,24 @@ export default function AdminPage() {
                             </div>
                         </div>
                         
-                        {/* Table widget (stacked below) */}
-                        <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', width: '100%' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                <div style={{ fontWeight: 700, color: '#374151' }}>Trainees ({filtered.length})</div>
+                        {/* Table + Cohort Strengths side by side */}
+                        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                            
+                            {/* Trainee table — takes up remaining space */}
+                            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0 }}>
+                                <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12 }}>
+                                    Trainees ({filtered.length})
+                                </div>
+                                <AdminTraineeTable trainees={filtered} />
                             </div>
-                            <AdminTraineeTable trainees={filtered} />
+
+                            {/* Cohort strengths — fixed width sidebar */}
+                            <div style={{ width: 320, flexShrink: 0 }}>
+                                <CohortStrengthsWeaknesses
+                                    pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
+                                />
+                            </div>
+
                         </div>
                     </div>
                 )}

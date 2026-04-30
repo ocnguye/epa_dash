@@ -15,10 +15,7 @@ export default function EvaluatorEPAGauge({ evaluator_avg_epa, evaluator_report_
     const epa = hasData ? evaluator_avg_epa! : 0;
 
     const getColor = (val: number): string => {
-        if (val >= 4) return '#22c55e';
-        if (val >= 3) return '#4a90e2';
-        if (val < 2 && val > 0) return '#ef4444';
-        return '#f59e0b';
+        return '#afd5f0ff';
     };
 
     const arcColor = hasData ? getColor(epa) : '#e5e7eb';
@@ -46,14 +43,14 @@ export default function EvaluatorEPAGauge({ evaluator_avg_epa, evaluator_report_
 
         // White fill — covers everything inside the ring's inner edge
         ctx.beginPath();
-        ctx.arc(cx, cy, radius - lw, 0, Math.PI * 2);
+        ctx.arc(cx, cy, radius + lw/2, 0, Math.PI * 2);
         ctx.fillStyle = '#ffffff';
         ctx.fill();
 
         // Grey track ring
         ctx.beginPath();
         ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+        ctx.strokeStyle = 'rgba(175, 213, 240, 0.5)';
         ctx.lineWidth = lw;
         ctx.lineCap = 'butt';
         ctx.stroke();

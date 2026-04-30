@@ -15,14 +15,18 @@ type Trainee = {
     report_count?: number;
 };
 
-export default function AdminTraineeTable({ trainees }: { trainees: Trainee[] }) {
+export default function AdminTraineeTable({ trainees, maxHeight }: { trainees: Trainee[]; maxHeight?: number }) {
     const router = useRouter();
+
+    const tableMaxHeight = maxHeight
+        ? `${maxHeight - 48}px`  // subtract heading height + padding
+        : 'calc(100vh - 240px)';
 
     return (
         <div style={{
             overflowX: 'auto',
             overflowY: 'auto',
-            maxHeight: 'calc(100vh - 240px)',
+            maxHeight: tableMaxHeight,
             border: '1px solid #e9ecef',
             borderRadius: 6,
             fontSize: 13,

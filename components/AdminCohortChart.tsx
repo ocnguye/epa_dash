@@ -130,6 +130,12 @@ export default function AdminCohortChart({
                 borderColor: '#4a90e2',
                 borderWidth: 1,
                 callbacks: {
+                    title: function(context: any) {
+                        if (context?.length && context[0].dataset?.type === 'line') {
+                            return [];
+                        }
+                        return context?.[0]?.label ? [String(context[0].label)] : [];
+                    },
                     label: function(context: any) {
                         try {
                             const idx = context.dataIndex;

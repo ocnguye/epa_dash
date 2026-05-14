@@ -15,14 +15,26 @@ type Trainee = {
     report_count?: number;
 };
 
-export default function AdminTraineeTable({ trainees }: { trainees: Trainee[] }) {
+export default function AdminTraineeTable({
+    trainees,
+    maxHeight,
+    pgyAvgMap = {},
+}: {
+    trainees: Trainee[];
+    maxHeight?: number;
+    pgyAvgMap?: Record<number, number>;
+}) {
     const router = useRouter();
+
+    const tableMaxHeight = maxHeight
+        ? `${maxHeight - 48}px`
+        : 'calc(100vh - 240px)';
 
     return (
         <div style={{
             overflowX: 'auto',
             overflowY: 'auto',
-            maxHeight: 'calc(100vh - 240px)',
+            maxHeight: tableMaxHeight,
             border: '1px solid #e9ecef',
             borderRadius: 6,
             fontSize: 13,
@@ -40,34 +52,39 @@ export default function AdminTraineeTable({ trainees }: { trainees: Trainee[] })
                     </tr>
                 </thead>
                 <tbody>
-                    {trainees.map(t => (
-                        <tr key={t.user_id} style={{ borderBottom: '1px solid #f8f9fa' }}>
-                            <td style={{ padding: '8px 12px', color: '#000' }}>
-                                <div style={{ fontWeight: 600 }}>
-                                    {(t.preferred_name && String(t.preferred_name).trim())
-                                        ? `${String(t.preferred_name).trim()} ${t.last_name ?? ''}`.trim()
-                                        : `${t.first_name ?? ''} ${t.last_name ?? ''}`.trim()}
-                                </div>
-                            </td>
-                            <td style={{ padding: '8px 12px', color: '#000', textTransform: 'capitalize' }}>{t.role ?? ''}</td>
-                            <td style={{ padding: '8px 12px', color: '#000' }}>{t.pgy ?? ''}</td>
-                            <td style={{ padding: '8px 12px', color: '#000' }}>{t.specialty ?? 'Interventional Radiology'}</td>
-                            <td style={{ padding: '8px 12px', color: '#000' }}>
-                                {typeof t.avg_epa === 'number'
-                                    ? (t.avg_epa.toFixed ? t.avg_epa.toFixed(2) : t.avg_epa)
-                                    : (t.avg_epa ?? 0)}
-                            </td>
-                            <td style={{ padding: '8px 12px', color: '#000' }}>{t.report_count ?? 0}</td>
-                            <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                                <button
-                                    onClick={() => router.push(`/adminepa/trainee/${t.user_id}`)}
-                                    style={{ background: 'linear-gradient(135deg, #4a90e2, #2b7bd3)', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}
-                                >
-                                    View
-                                </button>
-                            </td>
-                        </tr>
-                    ))}
+                    {trainees.map(t => {
+                        const cohortAvg = t.pgy != null ? (pgyAvgMap[t.pgy] ?? 0) : 0;
+                        return (
+                            <tr key={t.user_id} style={{ borderBottom: '1px solid #f8f9fa' }}>
+                                <td style={{ padding: '8px 12px', color: '#000' }}>
+                                    <div style={{ fontWeight: 600 }}>
+                                        {(t.preferred_name && String(t.preferred_name).trim())
+                                            ? `${String(t.preferred_name).trim()} ${t.last_name ?? ''}`.trim()
+                                            : `${t.first_name ?? ''} ${t.last_name ?? ''}`.trim()}
+                                    </div>
+                                </td>
+                                <td style={{ padding: '8px 12px', color: '#000', textTransform: 'capitalize' }}>{t.role ?? ''}</td>
+                                <td style={{ padding: '8px 12px', color: '#000' }}>{t.pgy ?? ''}</td>
+                                <td style={{ padding: '8px 12px', color: '#000' }}>{t.specialty ?? 'Interventional Radiology'}</td>
+                                <td style={{ padding: '8px 12px', color: '#000' }}>
+                                    {typeof t.avg_epa === 'number'
+                                        ? (t.avg_epa.toFixed ? t.avg_epa.toFixed(2) : t.avg_epa)
+                                        : (t.avg_epa ?? 0)}
+                                </td>
+                                <td style={{ padding: '8px 12px', color: '#000' }}>{t.report_count ?? 0}</td>
+                                <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                    <button
+                                        onClick={() => router.push(
+                                            `/adminepa/trainee/${t.user_id}?cohort_avg=${cohortAvg.toFixed(2)}`
+                                        )}
+                                        style={{ background: 'linear-gradient(135deg, #4a90e2, #2b7bd3)', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}
+                                    >
+                                        View
+                                    </button>
+                                </td>
+                            </tr>
+                        );
+                    })}
                 </tbody>
             </table>
         </div>

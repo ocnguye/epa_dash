@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import AdminCohortChart from '../../components/AdminCohortChart';
 import AdminTraineeTable from '../../components/AdminTraineeTable';
 import CohortStrengthsWeaknesses from '../../components/CohortStrengthsWeaknesses';
@@ -37,6 +37,19 @@ export default function AdminPage() {
     const [sortBy, setSortBy] = useState<'avg_epa' | 'pgy' | 'reports'>('avg_epa');
     const [evaluatorAvgEpa, setEvaluatorAvgEpa] = useState<number | null>(null);
     const [evaluatorReportCount, setEvaluatorReportCount] = useState<number>(0);
+    const strengthsRef = useRef<HTMLDivElement>(null);
+    const [strengthsHeight, setStrengthsHeight] = useState<number | undefined>(undefined);
+
+    useEffect(() => {
+        if (!strengthsRef.current) return;
+        const observer = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                setStrengthsHeight(Math.round(entry.contentRect.height + 36));
+            }
+        });
+        observer.observe(strengthsRef.current);
+        return () => observer.disconnect();
+    }, []);
 
     useEffect(() => {
         const load = async () => {
@@ -131,6 +144,23 @@ export default function AdminPage() {
         }
         return list;
     }, [trainees, filterPgy, sortBy, sortOrder]);
+
+    // Create map of PGY averages to reduce API calls and pass via URL navigation
+    const pgyAvgMap = useMemo(() => {
+        const map: Record<number, number> = {};
+        const pgyGroups: Record<number, number[]> = {};
+        trainees.forEach(t => {
+            if (t.pgy == null) return;
+            const v = Number(t.avg_epa);
+            if (!Number.isFinite(v) || v <= 0) return;
+            if (!pgyGroups[t.pgy]) pgyGroups[t.pgy] = [];
+            pgyGroups[t.pgy].push(v);
+        });
+        Object.entries(pgyGroups).forEach(([pgy, vals]) => {
+            map[Number(pgy)] = vals.reduce((a, b) => a + b, 0) / vals.length;
+        });
+        return map;
+    }, [trainees]);
 
     // Chart and table are rendered via encapsulated components below
 
@@ -477,7 +507,11 @@ export default function AdminPage() {
                                 <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12 }}>
                                     Trainees ({filtered.length})
                                 </div>
-                                <AdminTraineeTable trainees={filtered} />
+                                <AdminTraineeTable
+                                    trainees={filtered}
+                                    maxHeight={strengthsHeight}
+                                    pgyAvgMap={pgyAvgMap}
+                                />
                             </div>
 
                             {/* Cohort strengths — fixed width sidebar */}

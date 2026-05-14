@@ -1,77 +1,170 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import { 
+    Chart as ChartJS, 
+    CategoryScale, 
+    LinearScale, 
+    PointElement, 
+    LineElement, 
+    BarElement, 
+    Title, 
+    Tooltip, 
+    Legend,
+    Filler,
+} from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
+import ChartTrendline from 'chartjs-plugin-trendline';
 import ProgressCircle from '../../../../components/ProgressCircle';
-import { epaTrendOptions, procedureSpecificOptions } from '../../../../components/ChartConfigs';
+import { epaTrendOptions, procedureSpecificOptions, hoverSlopePlugin } from '../../../../components/ChartConfigs';
 
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
+ChartJS.register(
+    CategoryScale, 
+    LinearScale, 
+    PointElement, 
+    LineElement, 
+    BarElement, 
+    Title, 
+    Tooltip, 
+    Legend,
+    Filler,
+    ChartTrendline,
+    hoverSlopePlugin,
+);
 
 export default function TraineePage() {
-  // useParams() is the client-safe way to read dynamic route params in a client component
-  const params = useParams();
-  const router = useRouter();
-  const [resolvedId, setResolvedId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
-  const [procedures, setProcedures] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+    const params = useParams();
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const [resolvedId, setResolvedId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [user, setUser] = useState<any>(null);
+    const [procedures, setProcedures] = useState<any[]>([]);
+    const [stats, setStats] = useState<any>(null);
 
-  useEffect(() => {
-    // params from useParams() will be an object like { id: string }
-    if (!params || !(params as any).id) return;
-    setResolvedId(String((params as any).id));
-  }, [params]);
+    useEffect(() => {
+        if (!params || !(params as any).id) return;
+        setResolvedId(String((params as any).id));
+    }, [params]);
 
-  useEffect(() => {
-    if (!resolvedId) return;
+    useEffect(() => {
+        if (!resolvedId) return;
         const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`/api/adminepa/trainees/${resolvedId}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          setError(body?.message || 'Failed to load trainee');
-          setLoading(false);
-          return;
-        }
-        const data = await res.json();
-        setUser(data.user || null);
-        setProcedures(data.procedures || []);
-        setStats(data.stats || null);
-      } catch (err: any) {
-        setError(err?.message || 'Server error');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [resolvedId]);
+            setLoading(true);
+            setError(null);
+            try {
+                const res = await fetch(`/api/adminepa/trainees/${resolvedId}`, {
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' },
+                });
+                if (!res.ok) {
+                    const body = await res.json().catch(() => ({}));
+                    setError(body?.message || 'Failed to load trainee');
+                    setLoading(false);
+                    return;
+                }
+                const data = await res.json();
+                setUser(data.user || null);
+                setProcedures(data.procedures || []);
+                setStats(data.stats || null);
+            } catch (err: any) {
+                setError(err?.message || 'Server error');
+            } finally {
+                setLoading(false);
+            }
+        };
+        load();
+    }, [resolvedId]);
+    
+    // grabbing cohort avg EPA from URL (passed by parent component)
+    const cohortAvgEpa = useMemo(() => {
+        const v = Number(searchParams.get('cohort_avg'));
+        return Number.isFinite(v) && v > 0 ? v : 0;
+    }, [searchParams]);
 
-  const epaTrendData = useMemo(() => {
-    if (!procedures || procedures.length === 0) return null;
-    const sorted = [...procedures].sort((a,b) => new Date(a.create_date).getTime() - new Date(b.create_date).getTime());
-    return {
-      labels: sorted.map((p:any) => new Date(p.create_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
-      datasets: [{
-        label: 'EPA Score',
-        data: sorted.map((p:any) => Number(p.oepa) || 0),
-        borderColor: '#afd5f0',
-        backgroundColor: 'rgba(74,144,226,0.08)',
-        borderWidth: 3,
-        tension: 0.3,
-        fill: true,
-        pointBackgroundColor: '#afd5f0',
-        pointBorderColor: '#fff',
-        pointRadius: 5,
-      }]
-    };
-  }, [procedures]);
+    const epaTrendData = useMemo(() => {
+        if (!procedures || procedures.length === 0) return null;
+
+        const valid = procedures.filter((p: any) => {
+            const v = Number(p.oepa);
+            return Number.isFinite(v) && v > 0;
+        });
+        if (!valid.length) return null;
+
+        const sorted = [...valid].sort((a: any, b: any) =>
+            new Date(a.create_date).getTime() - new Date(b.create_date).getTime()
+        );
+
+        const fmtDay = (d: Date) => d.toISOString().slice(0, 10);
+        const map: Record<string, { sum: number; count: number }> = {};
+        const orderedKeys: string[] = [];
+
+        sorted.forEach((p: any) => {
+            const k = fmtDay(new Date(p.create_date));
+            if (!map[k]) {
+                map[k] = { sum: 0, count: 0 };
+                orderedKeys.push(k);
+            }
+            map[k].sum += Number(p.oepa);
+            map[k].count += 1;
+        });
+
+        const labels = orderedKeys.map(k => {
+            const [y, m, d] = k.split('-');
+            return new Date(Number(y), Number(m) - 1, Number(d))
+                .toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+
+        const epaData = orderedKeys.map(k =>
+            Number((map[k].sum / map[k].count).toFixed(2))
+        );
+
+        const datasets: any[] = [
+            {
+                label: 'EPA Score',
+                data: epaData,
+                timestamps: orderedKeys,
+                borderColor: '#afd5f0',
+                backgroundColor: 'rgba(74, 144, 226, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#afd5f0',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                pointRadius: 6,
+                trendlineLinear: {
+                    colorMin: 'rgba(178, 211, 194, 0.6)',
+                    colorMax: 'rgba(178, 211, 194, 0.6)',
+                    lineStyle: 'dotted',
+                    width: 2,
+                },
+            }
+        ];
+
+        if (cohortAvgEpa > 0) {
+            datasets.push({
+                label: 'Peer Cohort',
+                data: labels.map(() => cohortAvgEpa),
+                cohortValue: cohortAvgEpa,
+                cohortPgy: user?.pgy ?? null,
+                borderColor: '#ffe26c',
+                backgroundColor: 'rgba(255, 226, 108, 0.12)',
+                borderWidth: 2,
+                fill: false,
+                tension: 0,
+                borderDash: [6, 4],
+                pointRadius: 0,
+                pointHoverRadius: 10,
+                pointHitRadius: 10,
+                hoverBorderWidth: 2,
+            });
+        }
+
+        return { labels, datasets };
+    }, [procedures, cohortAvgEpa, user]); 
 
   const procedureSpecificData = useMemo(() => {
     if (!procedures || procedures.length === 0) return null;
@@ -155,7 +248,21 @@ export default function TraineePage() {
                 <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>
               ) : epaTrendData ? (
                 <div style={{ flex: 1, minHeight: 120 }}>
-                  <Line data={epaTrendData as any} options={epaTrendOptions as any} />
+                  <Line
+                      data={epaTrendData as any}
+                      options={{
+                          ...epaTrendOptions as any,
+                          interaction: {
+                              mode: 'index',
+                              intersect: false,
+                              axis: 'x',
+                          },
+                          plugins: {
+                              ...(epaTrendOptions as any).plugins,
+                              hoverSlopeLine: {},
+                          },
+                      }}
+                  />
                 </div>
               ) : (
                 <div style={{ flex: 1, minHeight: 120, color: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>No EPA data available</div>

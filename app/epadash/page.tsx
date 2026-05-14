@@ -8,9 +8,11 @@ import KeyPerformanceMetrics from "@/components/KeyPerformanceMetrics";
 import { 
     epaTrendOptions, 
     complexityVsEpaOptions, 
-    procedureSpecificOptions 
+    procedureSpecificOptions,
+    hoverSlopePlugin 
 } from "@/components/ChartConfigs";
 import { Line, Bar, Scatter } from 'react-chartjs-2';
+import ChartTrendline from 'chartjs-plugin-trendline';
 import { 
     Chart as ChartJS, 
     CategoryScale, 
@@ -22,7 +24,7 @@ import {
     Tooltip, 
     Legend,
     Filler, 
-    ChartOptions 
+    ChartOptions, 
 } from 'chart.js';
 import { useRouter } from 'next/navigation';
 import DashboardToggle from '@/components/DashboardToggle';
@@ -35,7 +37,10 @@ ChartJS.register(
     BarElement,
     Title, 
     Tooltip, 
-    Legend
+    Legend,
+    ChartTrendline,
+    Filler,
+    hoverSlopePlugin,
 );
 
 /* Types */
@@ -438,15 +443,37 @@ export default function Dashboard() {
         const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
         const monthLabel = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 
-        let epaLabels: string[] = [];
-        let epaData: Array<number | null> = [];
+    let epaLabels: string[] = [];
+    let epaData: Array<number | null> = [];
+    // precise ISO-like timestamps matching each label (YYYY-MM-DD or YYYY-MM-01 for months)
+    let epaTimestamps: string[] = [];
 
         if (timeframe === 'all') {
-            epaLabels = sortedProcedures.map(proc => {
-                const date = new Date(proc.create_date);
-                return dayLabel(date);
+            // Aggregate by day (same as last_month but without a fixed window)
+            const map: Record<string, { sum: number; count: number }> = {};
+            const orderedKeys: string[] = [];
+
+            sortedProcedures.forEach(p => {
+                const k = fmtDay(new Date(p.create_date));
+                if (!map[k]) {
+                    map[k] = { sum: 0, count: 0 };
+                    orderedKeys.push(k); // preserve chronological order
+                }
+                const v = Number(p.oepa);
+                if (Number.isFinite(v)) {
+                    map[k].sum += v;
+                    map[k].count += 1;
+                }
             });
-            epaData = sortedProcedures.map(proc => proc.oepa);
+
+            epaLabels = orderedKeys.map(k => {
+                const [y, m, d] = k.split('-');
+                return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            });
+            epaData = orderedKeys.map(k => 
+                map[k].count ? Number((map[k].sum / map[k].count).toFixed(2)) : null
+            );
+            epaTimestamps = orderedKeys.map(k => k); // YYYY-MM-DD keys
         } else {
             // build buckets depending on timeframe
             const now = new Date();
@@ -471,6 +498,7 @@ export default function Dashboard() {
                     return dayLabel(date);
                 });
                 epaData = buckets.map(k => map[k] && map[k].count ? Number((map[k].sum / map[k].count).toFixed(2)) : null);
+                epaTimestamps = buckets.slice(); // buckets are YYYY-MM-DD
             } else if (timeframe === 'last_6_months' || timeframe === 'last_year') {
                 // months window
                 const months = timeframe === 'last_6_months' ? 6 : 12;
@@ -493,6 +521,8 @@ export default function Dashboard() {
                     return monthLabel(d);
                 });
                 epaData = buckets.map(k => map[k] && map[k].count ? Number((map[k].sum / map[k].count).toFixed(2)) : null);
+                // convert YYYY-MM to YYYY-MM-01 for a valid ISO day timestamp
+                epaTimestamps = buckets.map(k => `${k}-01`);
             }
         }
 
@@ -502,6 +532,10 @@ export default function Dashboard() {
         epaDatasets.push({
             label: 'EPA Score',
             data: epaData,
+            // precise timestamps aligned with labels to allow time-based slope calculation
+            // labels are either YYYY-MM-DD (daily) or month labels; we attach matching
+            // ISO dates so ChartConfigs can parse them reliably.
+            timestamps: epaTimestamps.map(ts => ts),
             borderColor: '#afd5f0',
             backgroundColor: 'rgba(74, 144, 226, 0.1)',
             borderWidth: 3,
@@ -511,6 +545,14 @@ export default function Dashboard() {
             pointBorderColor: '#fff',
             pointBorderWidth: 2,
             pointRadius: 6,
+            // TRENDLINE: comment this block out to disable
+            trendlineLinear: {
+                colorMin: 'rgba(178, 211, 194, 0.6)',
+                colorMax: 'rgba(178, 211, 194, 0.6)',
+                lineStyle: 'dotted',
+                width: 2,
+            },
+            // END TRENDLINE
         });
         if (cohortAvg && cohortAvg > 0) {
             epaDatasets.push({
@@ -527,8 +569,8 @@ export default function Dashboard() {
                 borderDash: [6, 4],
                 // remove visible points on the cohort line but keep a generous hover/hit area
                 pointRadius: 0,
-                pointHoverRadius: 10,
-                pointHitRadius: 10,
+                pointHoverRadius: 5,
+                pointHitRadius: 5,
                 // also allow a slightly larger interactive area
                 hoverBorderWidth: 2,
             });
@@ -692,8 +734,21 @@ export default function Dashboard() {
             }
         };
 
+        base.scales.y = {
+            ...(base.scales.y || {}),
+            afterBuildTicks: (axis: any) => {
+                axis.ticks = axis.ticks.filter((t: any) => t.value <= 5);
+            },
+        };
+        base.interaction = {
+            mode: 'index',       // changed from 'nearest'
+            intersect: false,    // changed from true — enables continuous hover line
+            axis: 'x'
+        };
+
         // For longer time windows, shorten label text where possible by keeping month and day only
         base.plugins = base.plugins || {};
+        base.plugins.hoverSlopeLine = {};
         return base as any;
     }, [timeframe]);
 

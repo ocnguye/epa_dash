@@ -168,7 +168,7 @@ export const epaTrendOptions: ChartOptions<'line'> = {
         y: {
             beginAtZero: false,
             min: 1,
-            max: 5,
+            max: 5.5,
             ticks: {
                 stepSize: 1,
             },
@@ -309,3 +309,120 @@ export const procedureSpecificOptions: ChartOptions<'bar'> = {
         }
     }
 };
+
+// HOVER SLOPE PLUGIN for EPA Trend: comment this entire block out to disable
+export const hoverSlopePlugin = {
+    id: 'hoverSlopeLine',
+    afterDraw(chart: any) {
+        if (!chart.tooltip?._active?.length) return;
+
+        if (!chart.options.plugins?.hoverSlopeLine) return;
+        if (!chart.tooltip?._active?.length) return;
+
+        const ctx = chart.ctx;
+        const activePoint = chart.tooltip._active[0];
+        const x = activePoint.element.x;
+        const topY = chart.scales.y.top;
+        const bottomY = chart.scales.y.bottom;
+
+        // Draw vertical hover line
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x, topY);
+        ctx.lineTo(x, bottomY);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+
+        // Calculate slope. Prefer a time-based slope (EPA per day / per month) when
+        // chart labels are parseable dates. Fall back to EPA per procedure (per data
+        // index) when dates are not available.
+        // Use the dataset corresponding to the active tooltip point (hovered dataset)
+        const active = chart.tooltip._active[0];
+        const dsIndex = typeof active.datasetIndex === 'number' ? active.datasetIndex : 0;
+        const dataset = chart.data.datasets[dsIndex] || chart.data.datasets[0];
+
+        if (dataset?.label && String(dataset.label).toLowerCase().includes('cohort')) {
+            ctx.restore();
+            return;
+        }
+
+        // Normalize data points to {value, idx, t} where t is a timestamp if available
+        const points: Array<{ v: number; i: number; t?: number }> = (dataset.data || [])
+            .map((v: any, i: number): { v: number; i: number; t?: number } => {
+                // Prefer explicit timestamps array on the dataset if present
+                let t: number | undefined;
+                const dsTimestamps = (dataset as any).timestamps as Array<number | string> | undefined;
+                if (dsTimestamps && typeof dsTimestamps[i] !== 'undefined') {
+                    const maybe = dsTimestamps[i];
+                    const parsed = typeof maybe === 'number' ? maybe : Date.parse(String(maybe));
+                    if (!Number.isNaN(parsed)) t = parsed;
+                }
+
+                // fallback: try to extract timestamp from data point's x property (if using {x,y})
+                if (typeof t === 'undefined' && v && typeof v === 'object' && (v as any).x) {
+                    const parsed = Date.parse(String((v as any).x));
+                    if (!Number.isNaN(parsed)) t = parsed;
+                }
+
+            return {
+                v:
+                    v != null && typeof v === 'object' && typeof (v as any).y === 'number'
+                        ? (v as any).y
+                        : (v == null ? null : Number(v)),
+                i,
+                t
+            };            
+            })
+            .filter((p: { v: number; i: number; t?: number }) => p.v !== null && Number.isFinite(p.v));
+
+        if (points.length >= 2) {
+            // Ensure chronological ordering when timestamps exist
+            const pointsWithTime = points.filter(p => typeof p.t === 'number');
+            let first, last;
+            if (pointsWithTime.length >= 2) {
+                pointsWithTime.sort((a, b) => (a.t! - b.t!));
+                first = pointsWithTime[0];
+                last = pointsWithTime[pointsWithTime.length - 1];
+            } else {
+                // No timestamps: use first/last by index (chronological as constructed earlier)
+                first = points[0];
+                last = points[points.length - 1];
+            }
+
+            const deltaY = last.v - first.v;
+            let slopeLabel = '';
+            const slopeColor = deltaY >= 0 ? '#16a34a' : '#dc2626';
+
+            // Prefer time-based slope if timestamps available
+            if (typeof first.t === 'number' && typeof last.t === 'number' && last.t !== first.t) {
+                const days = (last.t - first.t) / (1000 * 60 * 60 * 24);
+                const slopePerDay = deltaY / days;
+                const slopePerMonth = slopePerDay * 30;
+                slopeLabel = `Trend: ${slopePerMonth >= 0 ? '+' : ''}${slopePerMonth.toFixed(2)} EPA/month (${slopePerDay >= 0 ? '+' : ''}${slopePerDay.toFixed(3)} EPA/day)`;
+            }
+
+            // fallback to per-procedure slope (per data index)
+            if (!slopeLabel) {
+                const idxDiff = last.i - first.i;
+                if (idxDiff !== 0) {
+                    const slopePerProc = deltaY / idxDiff;
+                    slopeLabel = `Trend: ${slopePerProc >= 0 ? '+' : ''}${slopePerProc.toFixed(3)} EPA/procedure`;
+                } else {
+                    slopeLabel = `Trend: ${deltaY >= 0 ? '+' : ''}${deltaY.toFixed(3)} EPA`;
+                }
+            }
+
+            // Draw slope label near the hover line
+            ctx.font = '600 12px Ubuntu, sans-serif';
+            ctx.fillStyle = slopeColor;
+            ctx.textAlign = x > chart.width / 2 ? 'right' : 'left';
+            const labelX = x > chart.width / 2 ? x - 8 : x + 8;
+            ctx.fillText(slopeLabel, labelX, topY + 16);
+        }
+
+        ctx.restore();
+    },
+};
+// END HOVER SLOPE PLUGIN

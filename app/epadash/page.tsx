@@ -154,6 +154,7 @@ export default function Dashboard() {
     const [chartInnerLeft, setChartInnerLeft] = useState<number>(0);
     const [chartInnerWidth, setChartInnerWidth] = useState<number>(0);
     const tabs = ['EPA Trend', 'Procedure-Specific EPA', 'Procedure Counts'];
+    const [procSortAsc, setProcSortAsc] = useState(true);
     const tabOverlap = 12; // pixels of overlap between adjacent tabs
 
     useEffect(() => {
@@ -618,19 +619,17 @@ export default function Dashboard() {
             return stripped.length > maxLength ? stripped.slice(0, maxLength - 1) + '…' : stripped;
         };
 
-        const labels = Object.values(procTypeStats).map(stat =>
-            trimProcedureName(stat.desc || 'Unknown')
-        );
-        const descriptions = Object.values(procTypeStats).map(stat => stat.desc || '');
-        const counts = Object.values(procTypeStats).map(stat => stat.count || 0);
+        const sortedEntries = Object.values(procTypeStats).sort((a, b) => procSortAsc ? a.total - b.total : b.total - a.total);
 
+        const labels = sortedEntries.map(stat => trimProcedureName(stat.desc || 'Unknown'));
+        const descriptions = sortedEntries.map(stat => stat.desc || '');
+        const counts = sortedEntries.map(stat => stat.count || 0);
         const procedureSpecificData = {
             labels,
             datasets: [
                 {
                     label: 'Average EPA Score',
-                    data: Object.values(procTypeStats).map(stat => Number(stat.total.toFixed(2))),
-                    // attach descriptions and counts for tooltip callbacks
+                    data: sortedEntries.map(stat => Number(stat.total.toFixed(2))),                    // attach descriptions and counts for tooltip callbacks
                     descriptions,
                     counts,
                     backgroundColor: [
@@ -657,7 +656,7 @@ export default function Dashboard() {
             complexityVsEpa: complexityVsEpaData,
             procedureSpecific: procedureSpecificData
         };
-    }, [displayProcedures, filteredProcedures, timeframe, stats, user]);
+    }, [displayProcedures, filteredProcedures, timeframe, stats, user, procSortAsc]);
 
     // procedure counts (monthly or annual) computed from all procedures and filtered by selectedProcedure
     const procedureCounts = useMemo(() => {
@@ -1140,6 +1139,41 @@ export default function Dashboard() {
                                                 </div>
                                             </div>
                                         </div>
+                                    )}
+
+                                    {activeTab === 'Procedure-Specific EPA' && (
+                                        <button
+                                            onClick={() => setProcSortAsc(prev => !prev)}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 6,
+                                                padding: '6px 12px',
+                                                borderRadius: 8,
+                                                border: '1px solid rgba(0, 0, 0, 0.3)',
+                                                background: 'rgba(175,213,240,0.06)',
+                                                fontWeight: 600,
+                                                cursor: 'pointer',
+                                                color: 'rgba(0, 0, 0, 0.6)',
+                                                fontSize: 13,
+                                            }}
+                                        >
+                                            {procSortAsc ? (
+                                                <>
+                                                    Low → High
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+                                                    </svg>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    High → Low
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+                                                    </svg>
+                                                </>
+                                            )}
+                                        </button>
                                     )}
 
                                     {activeTab === 'Procedure Counts' && (

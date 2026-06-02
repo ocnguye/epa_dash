@@ -1,4 +1,9 @@
-import { ChartOptions } from 'chart.js';
+import { ChartOptions, ChartType } from 'chart.js';
+declare module 'chart.js' {
+    interface PluginOptionsByType<TType extends ChartType> {
+        hoverSlopeLine?: boolean | Record<string, never>;
+    }
+}
 
 // EPA Trend Chart Options
 export const epaTrendOptions: ChartOptions<'line'> = {
@@ -130,7 +135,6 @@ export const epaTrendOptions: ChartOptions<'line'> = {
                 },
                 label: function(context: any) {
                     try {
-                        const ds = context.dataset as any;
                         const val = (context.parsed && typeof context.parsed.y === 'number') ? context.parsed.y : (context.raw ?? null);
                         const lines: string[] = [];
                         if (typeof val === 'number' && !Number.isNaN(val)) {
@@ -138,28 +142,14 @@ export const epaTrendOptions: ChartOptions<'line'> = {
                         } else {
                             lines.push(`${context.dataset.label}: ${String(val)}`);
                         }
-                        // Only show cohort average when hovering the cohort dataset itself
-                        if (ds && ds.cohortValue && String(ds.label || '').toLowerCase().includes('cohort')) {
-                            lines.push(`Cohort average (PGY): ${Number(ds.cohortValue).toFixed(2)}`);
-                        }
+                        // Remove the cohort average block entirely — label alone is sufficient
                         return lines;
                     } catch (e) {
                         return `${context.dataset.label}: ${context.parsed?.y ?? 'N/A'}`;
                     }
-                }
-                ,
-                footer: function(context: any) {
-                    try {
-                        if (!context || !context.length) return '';
-                        const ds = context[0].dataset as any;
-                        if (ds && String(ds.label || '').toLowerCase().includes('cohort')) {
-                            const pgy = ds.cohortPgy ? `PGY ${ds.cohortPgy}` : 'PGY';
-                            return `${pgy} cohort — All time`;
-                        }
-                        return '';
-                    } catch (e) {
-                        return '';
-                    }
+                },
+                footer: function() {
+                    return '';
                 }
             }
         }
@@ -249,6 +239,7 @@ export const procedureSpecificOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
+        hoverSlopeLine: false,
         legend: {
             display: false,
         },
@@ -314,18 +305,100 @@ export const procedureSpecificOptions: ChartOptions<'bar'> = {
 export const hoverSlopePlugin = {
     id: 'hoverSlopeLine',
     afterDraw(chart: any) {
-        if (!chart.tooltip?._active?.length) return;
-
         if (!chart.options.plugins?.hoverSlopeLine) return;
+
+        // ── 1. Compute slope from the active (non-cohort) dataset ──────────────
+        const datasets = chart.data.datasets || [];
+        const dataset = datasets.find(
+            (ds: any) => !String(ds.label ?? '').toLowerCase().includes('cohort')
+        ) ?? datasets[0];
+
+        if (!dataset) return;
+
+        const points: Array<{ v: number; i: number; t?: number }> = (dataset.data || [])
+            .map((v: any, i: number): { v: number; i: number; t?: number } => {
+                let t: number | undefined;
+
+                const dsTimestamps = (dataset as any).timestamps as Array<number | string> | undefined;
+                if (dsTimestamps && typeof dsTimestamps[i] !== 'undefined') {
+                    const maybe = dsTimestamps[i];
+                    const parsed = typeof maybe === 'number' ? maybe : Date.parse(String(maybe));
+                    if (!Number.isNaN(parsed)) t = parsed;
+                }
+
+                if (typeof t === 'undefined' && v && typeof v === 'object' && (v as any).x) {
+                    const parsed = Date.parse(String((v as any).x));
+                    if (!Number.isNaN(parsed)) t = parsed;
+                }
+
+                return {
+                    v:
+                        v != null && typeof v === 'object' && typeof (v as any).y === 'number'
+                            ? (v as any).y
+                            : v == null
+                            ? null
+                            : Number(v),
+                    i,
+                    t,
+                };
+            })
+            .filter((p: { v: number; i: number; t?: number }) => p.v !== null && Number.isFinite(p.v));
+
+        if (points.length < 2) return;
+
+        const pointsWithTime = points.filter(p => typeof p.t === 'number');
+        let first: { v: number; i: number; t?: number };
+        let last: { v: number; i: number; t?: number };
+
+        if (pointsWithTime.length >= 2) {
+            pointsWithTime.sort((a, b) => a.t! - b.t!);
+            first = pointsWithTime[0];
+            last = pointsWithTime[pointsWithTime.length - 1];
+        } else {
+            first = points[0];
+            last = points[points.length - 1];
+        }
+
+        const deltaY = last.v - first.v;
+        let slopeLabel = '';
+        const slopeColor = deltaY >= 0 ? '#16a34a' : '#dc2626';
+
+        if (typeof first.t === 'number' && typeof last.t === 'number' && last.t !== first.t) {
+            const days = (last.t - first.t) / (1000 * 60 * 60 * 24);
+            const slopePerDay = deltaY / days;
+            const slopePerMonth = slopePerDay * 30;
+            slopeLabel = `Trend: ${slopePerMonth >= 0 ? '+' : ''}${slopePerMonth.toFixed(2)} EPA/month (${slopePerDay >= 0 ? '+' : ''}${slopePerDay.toFixed(3)} EPA/day)`;
+        }
+
+        if (!slopeLabel) {
+            const idxDiff = last.i - first.i;
+            if (idxDiff !== 0) {
+                const slopePerProc = deltaY / idxDiff;
+                slopeLabel = `Trend: ${slopePerProc >= 0 ? '+' : ''}${slopePerProc.toFixed(3)} EPA/procedure`;
+            } else {
+                slopeLabel = `Trend: ${deltaY >= 0 ? '+' : ''}${deltaY.toFixed(3)} EPA`;
+            }
+        }
+
+        // ── 2. Always draw the slope label in the top-left of the chart area ──
+        const ctx = chart.ctx;
+        const topY = chart.scales.y.top;
+        const leftX = chart.scales.x.left;
+
+        ctx.save();
+        ctx.font = '600 12px Ubuntu, sans-serif';
+        ctx.fillStyle = slopeColor;
+        ctx.textAlign = 'left';
+        ctx.fillText(slopeLabel, leftX + 8, topY + 16);
+        ctx.restore();
+
+        // ── 3. Vertical hover line — only when a point is active ──────────────
         if (!chart.tooltip?._active?.length) return;
 
-        const ctx = chart.ctx;
         const activePoint = chart.tooltip._active[0];
         const x = activePoint.element.x;
-        const topY = chart.scales.y.top;
         const bottomY = chart.scales.y.bottom;
 
-        // Draw vertical hover line
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(x, topY);
@@ -334,94 +407,6 @@ export const hoverSlopePlugin = {
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
         ctx.setLineDash([4, 4]);
         ctx.stroke();
-
-        // Calculate slope. Prefer a time-based slope (EPA per day / per month) when
-        // chart labels are parseable dates. Fall back to EPA per procedure (per data
-        // index) when dates are not available.
-        // Use the dataset corresponding to the active tooltip point (hovered dataset)
-        const active = chart.tooltip._active[0];
-        const dsIndex = typeof active.datasetIndex === 'number' ? active.datasetIndex : 0;
-        const dataset = chart.data.datasets[dsIndex] || chart.data.datasets[0];
-
-        if (dataset?.label && String(dataset.label).toLowerCase().includes('cohort')) {
-            ctx.restore();
-            return;
-        }
-
-        // Normalize data points to {value, idx, t} where t is a timestamp if available
-        const points: Array<{ v: number; i: number; t?: number }> = (dataset.data || [])
-            .map((v: any, i: number): { v: number; i: number; t?: number } => {
-                // Prefer explicit timestamps array on the dataset if present
-                let t: number | undefined;
-                const dsTimestamps = (dataset as any).timestamps as Array<number | string> | undefined;
-                if (dsTimestamps && typeof dsTimestamps[i] !== 'undefined') {
-                    const maybe = dsTimestamps[i];
-                    const parsed = typeof maybe === 'number' ? maybe : Date.parse(String(maybe));
-                    if (!Number.isNaN(parsed)) t = parsed;
-                }
-
-                // fallback: try to extract timestamp from data point's x property (if using {x,y})
-                if (typeof t === 'undefined' && v && typeof v === 'object' && (v as any).x) {
-                    const parsed = Date.parse(String((v as any).x));
-                    if (!Number.isNaN(parsed)) t = parsed;
-                }
-
-            return {
-                v:
-                    v != null && typeof v === 'object' && typeof (v as any).y === 'number'
-                        ? (v as any).y
-                        : (v == null ? null : Number(v)),
-                i,
-                t
-            };            
-            })
-            .filter((p: { v: number; i: number; t?: number }) => p.v !== null && Number.isFinite(p.v));
-
-        if (points.length >= 2) {
-            // Ensure chronological ordering when timestamps exist
-            const pointsWithTime = points.filter(p => typeof p.t === 'number');
-            let first, last;
-            if (pointsWithTime.length >= 2) {
-                pointsWithTime.sort((a, b) => (a.t! - b.t!));
-                first = pointsWithTime[0];
-                last = pointsWithTime[pointsWithTime.length - 1];
-            } else {
-                // No timestamps: use first/last by index (chronological as constructed earlier)
-                first = points[0];
-                last = points[points.length - 1];
-            }
-
-            const deltaY = last.v - first.v;
-            let slopeLabel = '';
-            const slopeColor = deltaY >= 0 ? '#16a34a' : '#dc2626';
-
-            // Prefer time-based slope if timestamps available
-            if (typeof first.t === 'number' && typeof last.t === 'number' && last.t !== first.t) {
-                const days = (last.t - first.t) / (1000 * 60 * 60 * 24);
-                const slopePerDay = deltaY / days;
-                const slopePerMonth = slopePerDay * 30;
-                slopeLabel = `Trend: ${slopePerMonth >= 0 ? '+' : ''}${slopePerMonth.toFixed(2)} EPA/month (${slopePerDay >= 0 ? '+' : ''}${slopePerDay.toFixed(3)} EPA/day)`;
-            }
-
-            // fallback to per-procedure slope (per data index)
-            if (!slopeLabel) {
-                const idxDiff = last.i - first.i;
-                if (idxDiff !== 0) {
-                    const slopePerProc = deltaY / idxDiff;
-                    slopeLabel = `Trend: ${slopePerProc >= 0 ? '+' : ''}${slopePerProc.toFixed(3)} EPA/procedure`;
-                } else {
-                    slopeLabel = `Trend: ${deltaY >= 0 ? '+' : ''}${deltaY.toFixed(3)} EPA`;
-                }
-            }
-
-            // Draw slope label near the hover line
-            ctx.font = '600 12px Ubuntu, sans-serif';
-            ctx.fillStyle = slopeColor;
-            ctx.textAlign = x > chart.width / 2 ? 'right' : 'left';
-            const labelX = x > chart.width / 2 ? x - 8 : x + 8;
-            ctx.fillText(slopeLabel, labelX, topY + 16);
-        }
-
         ctx.restore();
     },
 };

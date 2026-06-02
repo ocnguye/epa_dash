@@ -193,7 +193,12 @@ export default function TraineePage() {
         return procSortAsc ? avgA - avgB : avgB - avgA;
     });
 
-    const labels = sortedEntries.map(e => (e.code && e.code !== 'Unknown') ? e.code : truncate(String(e.desc || 'Unknown'), 30));
+    const trimProcedureName = (name: string, maxLength = 20): string => {
+        const stripped = name.replace(/^\s*(IR|CT)\s+/i, '').trim();
+        return stripped.length > maxLength ? stripped.slice(0, maxLength - 1) + '…' : stripped;
+    };
+
+    const labels = sortedEntries.map(e => trimProcedureName(e.desc || e.code || 'Unknown'));
     const descriptions = sortedEntries.map(s => s.desc || '');
     const counts = sortedEntries.map(s => s.count || 0);
     const averages = sortedEntries.map(s => s.count ? Number((s.sum / s.count).toFixed(1)) : 0);
@@ -357,7 +362,7 @@ export default function TraineePage() {
                                         flex: 1,
                                         minHeight: 0,
                                     }}>
-                                        <div style={{ position: 'relative', width: chartWidth, height: 300, minHeight: 300 }}>
+                                        <div style={{ position: 'relative', width: chartWidth, height: 420, minHeight: 300 }}>
                                             <Bar data={procedureSpecificData as any} options={procedureSpecificOptions as any} />
                                         </div>
                                     </div>

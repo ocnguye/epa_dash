@@ -1317,16 +1317,14 @@ export default function Dashboard() {
                                         <tr>
                                             <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Date</th>
                                             <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}><strong>Trainee</strong></th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Procedure Code</th>
                                             <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Description</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Status</th>
                                             <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>EPA</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {loading ? (
                                             <tr>
-                                                <td colSpan={6} style={{ textAlign: 'center', color: '#888', padding: '20px' }}>Loading...</td>
+                                                <td colSpan={4} style={{ textAlign: 'center', color: '#888', padding: '20px' }}>Loading...</td>
                                             </tr>
                                         ) : (
                                             procedures.map((proc) => (
@@ -1336,50 +1334,7 @@ export default function Dashboard() {
                                                         <div style={{ fontWeight: 600 }}>{proc.trainee_name}</div>
                                                         <div style={{ fontSize: 12, color: '#666' }}>{proc.attending_name}</div>
                                                     </td>
-                                                    <td style={{ padding: '8px 12px', color: '#000' }}>{proc.proc_code}</td>
                                                     <td style={{ padding: '8px 12px', color: '#000' }}>{proc.proc_desc}</td>
-                                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                                        {(() => {
-                                                            const status = getFeedbackStatus(proc.seek_feedback);
-                                                            return (
-                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                                                    {/* Status badge rendered as a compact select so status display and control are the same element */}
-                                                                    <div style={{ position: 'relative', display: 'inline-block', width: 140 }}>
-                                                                        <select
-                                                                            value={proc.seek_feedback}
-                                                                            onChange={(e) => updateProcedureStatus(proc.report_id, e.target.value)}
-                                                                            title={getStatusDescription(proc.seek_feedback)}
-                                                                            style={{
-                                                                                // badge styling
-                                                                                padding: '4px 8px',
-                                                                                paddingRight: '30px',
-                                                                                borderRadius: 6,
-                                                                                fontSize: 11,
-                                                                                fontWeight: 600,
-                                                                                display: 'inline-block',
-                                                                                width: '100%',
-                                                                                textAlign: 'center',
-                                                                                cursor: 'pointer',
-                                                                                border: '1px solid rgba(0,0,0,0.06)',
-                                                                                backgroundColor: status.bgColor,
-                                                                                color: status.color,
-                                                                                WebkitAppearance: 'none',
-                                                                                MozAppearance: 'none',
-                                                                                appearance: 'none',
-                                                                            }}
-                                                                        >
-                                                                            <option value="not_required">Not Required</option>
-                                                                            <option value="feedback_requested">Feedback Requested</option>
-                                                                            <option value="discussed">Discussed</option>
-                                                                        </select>
-                                                                        <svg viewBox="0 0 10 6" style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 8, height: 5, pointerEvents: 'none', color: status.color }} xmlns="http://www.w3.org/2000/svg">
-                                                                            <path d="M0 0 L5 6 L10 0" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                                                                        </svg>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </td>
                                                     <td style={{ padding: '8px 12px', color: '#000', textAlign: 'center', fontWeight: 600 }}
                                                     title={getEPADescription(proc.oepa)}>
                                                         {proc.oepa}</td>

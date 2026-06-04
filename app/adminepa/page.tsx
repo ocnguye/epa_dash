@@ -33,8 +33,7 @@ export default function AdminPage() {
     const [profileError, setProfileError] = useState('');
     const [profileSuccess, setProfileSuccess] = useState('');
     const [filterPgy, setFilterPgy] = useState<string>('all');
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-    const [sortBy, setSortBy] = useState<'avg_epa' | 'pgy' | 'reports'>('avg_epa');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');    const [sortBy, setSortBy] = useState<'avg_epa' | 'pgy'>('avg_epa');
     const [evaluatorAvgEpa, setEvaluatorAvgEpa] = useState<number | null>(null);
     const [evaluatorReportCount, setEvaluatorReportCount] = useState<number>(0);
     const strengthsRef = useRef<HTMLDivElement>(null);
@@ -138,9 +137,6 @@ export default function AdminPage() {
         if (sortBy === 'pgy') {
             // respect sortOrder toggle: asc => 1..7, desc => 7..1
             list.sort((a,b) => sortOrder === 'asc' ? ((a.pgy || 0) - (b.pgy || 0)) : ((b.pgy || 0) - (a.pgy || 0)));
-        }
-        if (sortBy === 'reports') {
-            list.sort((a,b) => sortOrder === 'asc' ? ((a.report_count || 0) - (b.report_count || 0)) : ((b.report_count || 0) - (a.report_count || 0)));
         }
         return list;
     }, [trainees, filterPgy, sortBy, sortOrder]);
@@ -282,12 +278,21 @@ export default function AdminPage() {
                             <label style={{ marginRight: 6, color: '#374151', fontWeight: 600 }}>Filter PGY:</label>
                             {/* Build PGY options in either ascending or descending order */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <select value={filterPgy} onChange={e => setFilterPgy(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e6e6e6', color: '#111827' }}>
+                                <select
+                                    value={filterPgy}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setFilterPgy(val);
+                                        if (val !== 'all' && sortBy === 'pgy') {
+                                            setSortBy('avg_epa');
+                                        }
+                                    }}
+                                    style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e6e6e6', color: '#111827' }}
+                                >
                                     <option value="all">All</option>
-                                    {([1,2,3,4,5,6,7] as number[])
-                                        .slice()
-                                                .sort((a,b) => a - b)
-                                                .map(n => <option key={n} value={String(n)}>PGY {n}</option>)}
+                                    {[1, 2, 3, 4, 5, 6, 7].map(n => (
+                                        <option key={n} value={String(n)}>PGY {n}</option>
+                                    ))}
                                 </select>
                                         <button
                                             onClick={() => {
@@ -325,8 +330,7 @@ export default function AdminPage() {
                         <label style={{ marginRight: 6, color: '#374151', fontWeight: 600 }}>Sort by:</label>
                         <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e6e6e6', color: '#111827' }}>
                             <option value="avg_epa">Average EPA</option>
-                            <option value="pgy">PGY</option>
-                            <option value="reports">Report Count</option>
+                            <option value="pgy" disabled={filterPgy !== 'all'}>PGY</option>
                         </select>
                     </div>
                 </div>

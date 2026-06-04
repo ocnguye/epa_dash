@@ -25,6 +25,28 @@ export default function AdminCohortChart({
     allTrainees: Trainee[];        // always the full unfiltered list, for overall avg
     pgyFilter?: number | null;
 }) {
+
+    // PGY Legend and Color Palette
+        const PGY_COLORS = [
+            'rgba(175, 213, 240, 0.6)', // PGY 1 — blue
+            'rgba(178, 211, 194, 0.6)', // PGY 2 — green
+            'rgba(255, 126, 112, 0.6)', // PGY 3 — coral
+            'rgba(200, 206, 238, 0.6)', // PGY 4 — lavender
+            'rgba(255, 226, 108, 0.6)', // PGY 5 — yellow
+            'rgba(255, 196, 140, 0.6)', // PGY 6 — peach
+            'rgba(200, 230, 180, 0.6)', // PGY 7 — sage
+        ];
+    
+        const PGY_BORDERS = [
+            '#afd5f0',
+            '#b2d3c2',
+            '#ff7e70',
+            '#c8ceee',
+            '#ffe26c',
+            '#ffc48c',
+            '#c8e6b4',
+        ];
+
     // Compute reference line: cohort avg when PGY filter active, overall avg otherwise
     const { refValue, refLabel } = useMemo(() => {
         if (pgyFilter != null) {
@@ -66,8 +88,16 @@ export default function AdminCohortChart({
                 type: 'bar',
                 label: 'Average EPA',
                 data,
-                backgroundColor: labels.map(() => 'rgba(175,213,240,0.6)'),
-                borderColor: labels.map(() => '#afd5f0'),
+                backgroundColor: list.map(t => {
+                    const pgy = t.pgy;
+                    if (pgy != null && pgy >= 1 && pgy <= 7) return PGY_COLORS[pgy - 1];
+                    return PGY_COLORS[0];
+                }),
+                borderColor: list.map(t => {
+                    const pgy = t.pgy;
+                    if (pgy != null && pgy >= 1 && pgy <= 7) return PGY_BORDERS[pgy - 1];
+                    return PGY_BORDERS[0];
+                }),
                 borderWidth: 2,
                 borderRadius: 0,
                 categoryPercentage,
@@ -106,20 +136,42 @@ export default function AdminCohortChart({
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                display: cohortChart.datasets.length > 1,
+                display: pgyFilter == null && cohortChart.datasets.length >= 1,
                 position: 'top' as const,
                 labels: {
                     usePointStyle: true,
-                    generateLabels: (chart: any) =>
-                        chart.data.datasets.map((ds: any, i: number) => ({
-                            text: ds.label,
-                            fillStyle: Array.isArray(ds.borderColor) ? ds.borderColor[0] : ds.borderColor,
-                            strokeStyle: Array.isArray(ds.borderColor) ? ds.borderColor[0] : ds.borderColor,
-                            lineDash: ds.borderDash ?? [],
-                            datasetIndex: i,
+                    generateLabels: (chart: any) => {
+                        // Build one legend entry per PGY level present in the data
+                        const pgySet = new Set<number>();
+                        chart.data.datasets[0]?.pgy?.forEach((p: any) => {
+                            if (p != null && p !== '') pgySet.add(Number(p));
+                        });
+                        const pgyEntries = Array.from(pgySet).sort((a, b) => a - b);
+
+                        const pgyLabels = pgyEntries.map(pgy => ({
+                            text: `PGY ${pgy}`,
+                            fillStyle: PGY_COLORS[pgy - 1] ?? PGY_COLORS[0],
+                            strokeStyle: PGY_BORDERS[pgy - 1] ?? PGY_BORDERS[0],
+                            lineDash: [],
                             hidden: false,
-                            pointStyle: ds.type === 'line' ? 'line' : 'rect',
-                        })),
+                            pointStyle: 'rect' as const,
+                            datasetIndex: 0,
+                        }));
+
+                        // Append the reference line entry if present
+                        const lineDatasets = chart.data.datasets.filter((ds: any) => ds.type === 'line');
+                        const lineLabels = lineDatasets.map((ds: any, i: number) => ({
+                            text: ds.label,
+                            fillStyle: ds.borderColor,
+                            strokeStyle: ds.borderColor,
+                            lineDash: ds.borderDash ?? [],
+                            hidden: false,
+                            pointStyle: 'line' as const,
+                            datasetIndex: i + 1,
+                        }));
+
+                        return [...pgyLabels, ...lineLabels];
+                    },
                 },
             },
             title: { display: false },

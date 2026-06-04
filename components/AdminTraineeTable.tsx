@@ -146,9 +146,10 @@ export default function AdminTraineeTable({
                                 <td style={{ padding: '8px 12px', color: '#000' }}>{t.report_count ?? 0}</td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                     <button
-                                        onClick={() => router.push(
-                                            `/adminepa/trainee/${t.user_id}?cohort_avg=${cohortAvg.toFixed(2)}`
-                                        )}
+                                        onClick={() => {
+                                            const encoded = btoa(cohortAvg.toFixed(2));
+                                            router.push(`/adminepa/trainee/${t.user_id}?ca=${encoded}`);
+                                        }}
                                         style={{ background: 'linear-gradient(135deg, #4a90e2, #2b7bd3)', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}
                                     >
                                         View

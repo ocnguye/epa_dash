@@ -83,8 +83,15 @@ export default function TraineePage() {
     
     // grabbing cohort avg EPA from URL (passed by parent component)
     const cohortAvgEpa = useMemo(() => {
-        const v = Number(searchParams.get('cohort_avg'));
-        return Number.isFinite(v) && v > 0 ? v : 0;
+        const raw = searchParams.get('ca');
+        if (!raw) return 0;
+        try {
+            const decoded = atob(raw);
+            const v = Number(decoded);
+            return Number.isFinite(v) && v > 0 ? v : 0;
+        } catch {
+            return 0;
+        }
     }, [searchParams]);
 
     const epaTrendData = useMemo(() => {

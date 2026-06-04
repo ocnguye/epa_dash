@@ -6,7 +6,6 @@ import AdminTraineeTable from '../../components/AdminTraineeTable';
 import CohortStrengthsWeaknesses from '../../components/CohortStrengthsWeaknesses';
 import DashboardToggle from '../../components/DashboardToggle';
 import { useRouter } from 'next/navigation';
-import EvaluatorEPAGauge from '@/components/EvaluatorEPAGauge';
 
 type Trainee = {
     user_id: number;
@@ -34,8 +33,6 @@ export default function AdminPage() {
     const [profileSuccess, setProfileSuccess] = useState('');
     const [filterPgy, setFilterPgy] = useState<string>('all');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');    const [sortBy, setSortBy] = useState<'avg_epa' | 'pgy'>('avg_epa');
-    const [evaluatorAvgEpa, setEvaluatorAvgEpa] = useState<number | null>(null);
-    const [evaluatorReportCount, setEvaluatorReportCount] = useState<number>(0);
     const strengthsRef = useRef<HTMLDivElement>(null);
     const [strengthsHeight, setStrengthsHeight] = useState<number | undefined>(undefined);
 
@@ -108,13 +105,6 @@ export default function AdminPage() {
                     } as Trainee;
                 });
                 setTrainees(normalized || []);
-                
-                const evalRes = await fetch('/api/adminepa');
-                    if (evalRes.ok) {
-                        const evalData = await evalRes.json();
-                        setEvaluatorAvgEpa(evalData.evaluator_avg_epa ?? null);
-                        setEvaluatorReportCount(evalData.evaluator_report_count ?? 0);
-                    }
             } catch (err: any) {
                 setError(err?.message || 'Server error');
             } finally {
@@ -481,32 +471,75 @@ export default function AdminPage() {
                     <div style={{ background: '#fff', padding: 24, borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', color: 'red' }}>{error}</div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {/* Chart + Gauge side by side, gauge sits on the purple gradient */}
-                        <div style={{ display: 'flex', alignItems: 'stretch', gap: 16 }}>
-                            {/* White card: chart only — allow it to shrink */}
-                            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, overflow: 'hidden' }}>
-                                <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12 }}>Cohort EPA Comparison</div>
-                                <AdminCohortChart 
-                                    trainees={filtered} 
-                                    allTrainees={trainees}
-                                    pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
-                                />
+                    
+                        {/* Chart + Strengths/Weaknesses side by side */}
+                        <div style={{ display: 'flex', alignItems: 'stretch', gap: 16, height: 620 }}>
+                        
+                            {/* Cohort chart */}
+                            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12, flexShrink: 0 }}>Cohort EPA Comparison</div>
+                                <div style={{ overflowY: 'auto', flex: 1 }}>
+                                    <AdminCohortChart
+                                        trainees={filtered}
+                                        allTrainees={trainees}
+                                        pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
+                                    />
+                                </div>
                             </div>
 
-                            {/* Gauge wrapper — fixed 320px forces chart to shrink */}
-                            <div style={{ width: 320, flexShrink: 0, flexGrow: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <EvaluatorEPAGauge
-                                    evaluator_avg_epa={evaluatorAvgEpa}
-                                    evaluator_report_count={evaluatorReportCount}
-                                    loading={loading}
-                                />
+                            {/* Strengths + Weaknesses stacked */}
+                            <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+
+                                {/* Tab-style title */}
+                                <div style={{
+                                    background: '#6b7280',
+                                    color: '#fff',
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    padding: '10px 16px',
+                                    borderRadius: '8px 8px 0 0',
+                                    boxShadow: '0 -2px 8px rgba(0,0,0,0.15)',
+                                    border: '1px solid rgba(107, 114, 128, 0.5)',
+                                    borderBottom: 'none',
+                                    width: '100%',
+                                    boxSizing: 'border-box' as const,
+                                    textAlign: 'center' as const,
+                                }}>
+                                    {filterPgy === 'all' ? 'Cohort ' : `PGY-${filterPgy} `} Strengths &amp; Weaknesses
+                                </div>
+
+                                {/* Panel container */}
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 12,
+                                    background: '#fff',
+                                    borderRadius: '0 0 12px 12px',
+                                    border: '1px solid rgba(107, 114, 128, 0.5)',
+                                    borderTop: 'none',
+                                    padding: 12,
+                                    flex: 1,
+                                    overflow: 'hidden',
+                                }}>
+                                    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                                        <CohortStrengthsWeaknesses
+                                            mode="strengths"
+                                            pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
+                                        />
+                                    </div>
+                                    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                                        <CohortStrengthsWeaknesses
+                                            mode="weaknesses"
+                                            pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
+                                        />
+                                    </div>
+                                </div>
+
                             </div>
                         </div>
-                        
-                        {/* Table + Cohort Strengths side by side */}
+
+                        {/* Table */}
                         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                            
-                            {/* Trainee table — takes up remaining space */}
                             <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0 }}>
                                 <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12 }}>
                                     Trainees ({filtered.length})
@@ -517,15 +550,8 @@ export default function AdminPage() {
                                     pgyAvgMap={pgyAvgMap}
                                 />
                             </div>
-
-                            {/* Cohort strengths — fixed width sidebar */}
-                            <div style={{ width: 320, flexShrink: 0 }}>
-                                <CohortStrengthsWeaknesses
-                                    pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
-                                />
-                            </div>
-
                         </div>
+
                     </div>
                 )}
             </div>

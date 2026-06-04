@@ -11,9 +11,10 @@ type ProcedureStat = {
 
 type Props = {
     pgyFilter?: number | null;
+    mode: 'strengths' | 'weaknesses';
 };
 
-export default function CohortStrengthsWeaknesses({ pgyFilter }: Props) {
+export default function CohortStrengthsWeaknesses({ pgyFilter, mode }: Props) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [procedures, setProcedures] = useState<ProcedureStat[]>([]);
@@ -43,17 +44,17 @@ export default function CohortStrengthsWeaknesses({ pgyFilter }: Props) {
         load();
     }, [pgyFilter]);
 
-    const { strengths, weaknesses, hasData } = useMemo(() => {
+    const items = useMemo(() => {
         const qualified = procedures.filter(p => p.count >= 2);
         const sorted = qualified.slice().sort((a, b) => b.avg_epa - a.avg_epa);
-        return {
-            strengths: sorted.slice(0, 3),
-            weaknesses: sorted.slice(-3).reverse(),
-            hasData: qualified.length > 0,
-        };
-    }, [procedures]);
+        if (mode === 'strengths') return sorted.slice(0, 10);
+        return sorted.slice(-10).reverse();
+    }, [procedures, mode]);
 
+    const hasData = items.length > 0;
     const label = pgyFilter != null ? `PGY-${pgyFilter} Cohort` : 'Program-Wide';
+    const title = mode === 'strengths' ? 'Top Strengths' : 'Areas to Improve';
+    const emptyMsg = mode === 'strengths' ? 'No strengths identified' : 'No areas identified';
 
     const renderRow = (p: ProcedureStat, idx: number) => (
         <div key={idx} style={{ padding: '10px 8px', borderBottom: '1px solid #f1f1f3', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -82,14 +83,10 @@ export default function CohortStrengthsWeaknesses({ pgyFilter }: Props) {
     );
 
     return (
-        <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4, color: '#374151' }}>
-                Cohort Strengths &amp; Improvements
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, color: '#374151' }}>
+                {title}
             </div>
-            <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 14 }}>
-                {label} — by procedure average EPA
-            </div>
-
             {loading ? (
                 <div style={{ color: '#6b7280', padding: '24px 0', textAlign: 'center' }}>Loading...</div>
             ) : error ? (
@@ -99,20 +96,9 @@ export default function CohortStrengthsWeaknesses({ pgyFilter }: Props) {
                     No procedure data available{pgyFilter != null ? ` for PGY-${pgyFilter}` : ''}.
                 </div>
             ) : (
-                <>
-                    <div style={{ marginBottom: 6, color: '#9CA3AF', fontSize: 13 }}><strong>Top Strengths</strong></div>
-                    <div style={{ marginBottom: 16 }}>
-                        {strengths.length
-                            ? strengths.map(renderRow)
-                            : <div style={{ color: '#6b7280', padding: '8px 6px', fontSize: 13 }}>No strengths identified</div>}
-                    </div>
-                    <div style={{ marginBottom: 6, color: '#9CA3AF', fontSize: 13 }}><strong>Areas to Improve</strong></div>
-                    <div>
-                        {weaknesses.length
-                            ? weaknesses.map(renderRow)
-                            : <div style={{ color: '#6b7280', padding: '8px 6px', fontSize: 13 }}>No areas identified</div>}
-                    </div>
-                </>
+                <div style={{ overflowY: 'auto', flex: 1 }}>
+                    {items.map(renderRow)}
+                </div>
             )}
         </div>
     );

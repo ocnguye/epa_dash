@@ -27,24 +27,24 @@ export default function AdminCohortChart({
 }) {
 
     // PGY Legend and Color Palette
-        const PGY_COLORS = [
-            'rgba(175, 213, 240, 0.6)', // PGY 1 — blue
-            'rgba(178, 211, 194, 0.6)', // PGY 2 — green
-            'rgba(255, 126, 112, 0.6)', // PGY 3 — coral
-            'rgba(200, 206, 238, 0.6)', // PGY 4 — lavender
-            'rgba(255, 226, 108, 0.6)', // PGY 5 — yellow
-            'rgba(255, 196, 140, 0.6)', // PGY 6 — peach
-            'rgba(200, 230, 180, 0.6)', // PGY 7 — sage
-        ];
-    
-        const PGY_BORDERS = [
-            '#afd5f0',
-            '#b2d3c2',
-            '#ff7e70',
-            '#c8ceee',
-            '#ffe26c',
-            '#ffc48c',
-            '#c8e6b4',
+    const PGY_COLORS = [
+        'rgba(255, 126, 112, 0.6)', // PGY 1 — coral (red)
+        'rgba(255, 196, 140, 0.6)', // PGY 2 — peach (orange)
+        'rgba(255, 226, 108, 0.6)', // PGY 3 — yellow
+        'rgba(200, 230, 180, 0.6)', // PGY 4 — sage (yellow-green)
+        'rgba(178, 211, 194, 0.6)', // PGY 5 — green
+        'rgba(200, 206, 238, 0.6)', // PGY 6 — lavender (blue-purple)
+        'rgba(175, 213, 240, 0.6)', // PGY 7 — blue
+    ];
+
+    const PGY_BORDERS = [
+        '#ff7e70', // PGY 1 — coral
+        '#ffc48c', // PGY 2 — peach
+        '#ffe26c', // PGY 3 — yellow
+        '#c8e6b4', // PGY 4 — sage
+        '#b2d3c2', // PGY 5 — green
+        '#c8ceee', // PGY 6 — lavender
+        '#afd5f0', // PGY 7 — blue
         ];
 
     // Compute reference line: cohort avg when PGY filter active, overall avg otherwise
@@ -135,6 +135,7 @@ export default function AdminCohortChart({
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
+            hoverSlopeLine: false,
             legend: {
                 display: pgyFilter == null && cohortChart.datasets.length >= 1,
                 position: 'top' as const,

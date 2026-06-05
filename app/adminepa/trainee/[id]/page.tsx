@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import CohortStrengthsWeaknesses, { ProcedureStat } from '../../../../components/CohortStrengthsWeaknesses';
+
 import { 
     Chart as ChartJS, 
     CategoryScale, 
@@ -80,6 +82,28 @@ export default function TraineePage() {
         };
         load();
     }, [resolvedId]);
+
+    const traineeLocalProcedures = useMemo((): ProcedureStat[] => {
+        if (!procedures || procedures.length === 0) return [];
+        const statsMap: Record<string, { sum: number; count: number; desc: string; code: string }> = {};
+        procedures.forEach((p: any) => {
+            const desc = p.proc_desc ? String(p.proc_desc).trim() : '';
+            const code = p.proc_code ? String(p.proc_code).trim() : '';
+            const key = desc || code || 'Unknown';
+            const oepa = Number(p.oepa);
+            if (!statsMap[key]) statsMap[key] = { sum: 0, count: 0, desc: desc || 'Unknown', code: code || '' };
+            if (Number.isFinite(oepa) && oepa > 0) {
+                statsMap[key].sum += oepa;
+                statsMap[key].count += 1;
+            }
+        });
+        return Object.values(statsMap).map(s => ({
+            desc: s.desc,
+            code: s.code,
+            avg_epa: s.count ? s.sum / s.count : 0,
+            count: s.count,
+        }));
+    }, [procedures]);
     
     // grabbing cohort avg EPA from URL (passed by parent component)
     const cohortAvgEpa = useMemo(() => {
@@ -233,13 +257,6 @@ export default function TraineePage() {
     };
   }, [procedures, procSortAsc]);
 
-  const strengthsWeaknesses = useMemo(() => {
-    if (!procedureSpecificData) return { strengths: [], weaknesses: [] };
-    const items = procedureSpecificData.labels.map((label, i) => ({ label, avg: (procedureSpecificData.datasets[0] as any).data[i], count: (procedureSpecificData.datasets[0] as any).counts[i], desc: (procedureSpecificData.datasets[0] as any).descriptions[i] }));
-    const sorted = items.slice().sort((a,b) => (b.avg || 0) - (a.avg || 0));
-    return { strengths: sorted.slice(0,3), weaknesses: sorted.slice(-3).reverse() };
-  }, [procedureSpecificData]);
-
   return (
       <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 24, boxSizing: 'border-box' }}>
           <div style={{ width: '100%', margin: 0 }}>
@@ -383,67 +400,87 @@ export default function TraineePage() {
                   </div>{/* end left column */}
 
                   {/* Right Column */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0, alignSelf: 'flex-start', width: '100%' }}>
 
-                      {/* Performance Summary */}
-                      <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
-                          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#374151' }}>Performance Summary</div>
-                          {stats ? (
-                              <>
-                                  <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-                                      <ProgressCircle
-                                          requestedCount={stats.feedback_requested || 0}
-                                          discussedCount={stats.feedback_discussed || 0}
-                                          notRequiredCount={Math.max(0, (stats.total_reports || 0) - (stats.feedback_requested || 0) - (stats.feedback_discussed || 0))}
-                                          totalCount={stats.total_reports || 0}
-                                          size={180}
-                                          strokeWidth={12}
-                                          loading={loading}
-                                      />
-                                  </div>
-                                  <div style={{ textAlign: 'left', color: '#374151', fontSize: 14 }}>
-                                      <div><strong>Average EPA:</strong> {(stats.avg_epa || 0).toFixed ? stats.avg_epa.toFixed(2) : stats.avg_epa}</div>
-                                      <div><strong>Total Reports:</strong> {stats.total_reports || 0}</div>
-                                      <div><strong>Procedures this month:</strong> {stats.procedures || 0}</div>
-                                  </div>
-                              </>
-                          ) : (
-                              <div style={{ color: '#6b7280' }}>No summary available</div>
-                          )}
-                      </div>
+                        {/* Performance Summary */}
+                        <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+                            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#374151' }}>Performance Summary</div>
+                            {stats ? (
+                                <>
+                                    <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
+                                        <ProgressCircle
+                                            requestedCount={stats.feedback_requested || 0}
+                                            discussedCount={stats.feedback_discussed || 0}
+                                            notRequiredCount={Math.max(0, (stats.total_reports || 0) - (stats.feedback_requested || 0) - (stats.feedback_discussed || 0))}
+                                            totalCount={stats.total_reports || 0}
+                                            size={180}
+                                            strokeWidth={12}
+                                            loading={loading}
+                                        />
+                                    </div>
+                                    <div style={{ textAlign: 'left', color: '#374151', fontSize: 14 }}>
+                                        <div><strong>Average EPA:</strong> {(stats.avg_epa || 0).toFixed ? stats.avg_epa.toFixed(2) : stats.avg_epa}</div>
+                                        <div><strong>Total Reports:</strong> {stats.total_reports || 0}</div>
+                                        <div><strong>Procedures this month:</strong> {stats.procedures || 0}</div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div style={{ color: '#6b7280' }}>No summary available</div>
+                            )}
+                        </div>
 
-                      {/* Strengths & Improvements */}
-                      <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#374151' }}>Strengths & Improvements</div>
-                          {procedureSpecificData ? (
-                              <div>
-                                  <div style={{ marginBottom: 12, color: '#9CA3AF' }}><strong>Top Strengths</strong></div>
-                                  <div aria-label="top-strengths-list" style={{ maxHeight: 220, overflowY: 'auto', paddingRight: 6 }}>
-                                      {strengthsWeaknesses.strengths.length ? strengthsWeaknesses.strengths.map((s: any, idx: number) => (
-                                          <div key={'s' + idx} style={{ padding: '8px 6px', borderBottom: '1px solid #f1f1f3' }}>
-                                              <div style={{ fontWeight: 700, color: '#374151', fontSize: 13 }}>{s.desc || s.label}</div>
-                                              <div style={{ color: '#374151', fontSize: 12 }}>{s.count} reports — avg EPA {s.avg}</div>
-                                          </div>
-                                      )) : <div style={{ color: '#6b7280', padding: '8px 6px' }}>No strengths identified</div>}
-                                  </div>
+                        {/* Strengths & Improvements */}
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            {/* Tab-style title */}
+                            <div style={{
+                                background: '#6b7280',
+                                color: '#fff',
+                                fontWeight: 600,
+                                fontSize: 14,
+                                padding: '10px 16px',
+                                borderRadius: '8px 8px 0 0',
+                                boxShadow: '0 -2px 8px rgba(0,0,0,0.15)',
+                                border: '1px solid rgba(107, 114, 128, 0.5)',
+                                borderBottom: 'none',
+                                textAlign: 'center' as const,
+                            }}>
+                                Strengths &amp; Improvements
+                            </div>
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 0,
+                                background: '#fff',
+                                borderRadius: '0 0 12px 12px',
+                                border: '1px solid rgba(107, 114, 128, 0.5)',
+                                borderTop: 'none',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                                overflow: 'hidden',
+                            }}>
+                                {/* Strengths panel */}
+                                <div style={{ padding: 12, borderBottom: '1px solid #f1f1f3' }}>
+                                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, color: '#374151' }}>Top Strengths</div>
+                                    <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                                        <CohortStrengthsWeaknesses
+                                            mode="strengths"
+                                            localProcedures={traineeLocalProcedures}
+                                        />
+                                    </div>
+                                </div>
+                                {/* Weaknesses panel */}
+                                <div style={{ padding: 12 }}>
+                                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, color: '#374151' }}>Areas to Improve</div>
+                                    <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                                        <CohortStrengthsWeaknesses
+                                            mode="weaknesses"
+                                            localProcedures={traineeLocalProcedures}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
-                                  <div style={{ marginTop: 12, marginBottom: 12, color: '#9CA3AF' }}><strong>Areas to Improve</strong></div>
-                                  <div aria-label="areas-to-improve-list" style={{ maxHeight: 220, overflowY: 'auto', paddingRight: 6 }}>
-                                      {strengthsWeaknesses.weaknesses.length ? strengthsWeaknesses.weaknesses.map((w: any, idx: number) => (
-                                          <div key={'w' + idx} style={{ padding: '8px 6px', borderBottom: '1px solid #f1f1f3' }}>
-                                              <div style={{ fontWeight: 700, color: '#374151', fontSize: 13 }}>{w.desc || w.label}</div>
-                                              <div style={{ color: '#374151', fontSize: 12 }}>{w.count} reports — avg EPA {w.avg}</div>
-                                          </div>
-                                      )) : <div style={{ color: '#6b7280', padding: '8px 6px' }}>No areas identified</div>}
-                                  </div>
-                              </div>
-                          ) : (
-                              <div style={{ color: '#6b7280' }}>No procedure data to analyze</div>
-                          )}
-                      </div>
-
-                  </div>{/* end right column */}
-
+                    </div>{/* end right column */}
               </div>{/* end main grid */}
           </div>
       </div>

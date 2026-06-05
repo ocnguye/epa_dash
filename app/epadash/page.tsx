@@ -1303,7 +1303,7 @@ export default function Dashboard() {
                             boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                         }}>
                             <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 16, color: '#000' }}>
-                                Procedure Summary
+                                Procedure Log
                             </div>
                             <div style={{ 
                                 maxHeight: 500, 

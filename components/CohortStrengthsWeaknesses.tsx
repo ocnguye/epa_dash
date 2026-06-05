@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 
-type ProcedureStat = {
+export type ProcedureStat = {
     desc: string;
     code: string;
     avg_epa: number;
@@ -12,14 +12,20 @@ type ProcedureStat = {
 type Props = {
     pgyFilter?: number | null;
     mode: 'strengths' | 'weaknesses';
+    localProcedures?: ProcedureStat[]; // if provided, skip fetch and use this data
 };
 
-export default function CohortStrengthsWeaknesses({ pgyFilter, mode }: Props) {
-    const [loading, setLoading] = useState(true);
+export default function CohortStrengthsWeaknesses({ pgyFilter, mode, localProcedures }: Props) {
+    const [loading, setLoading] = useState(!localProcedures);
     const [error, setError] = useState<string | null>(null);
-    const [procedures, setProcedures] = useState<ProcedureStat[]>([]);
+    const [procedures, setProcedures] = useState<ProcedureStat[]>(localProcedures ?? []);
 
     useEffect(() => {
+        if (localProcedures) {
+            setProcedures(localProcedures);
+            setLoading(false);
+            return;
+        }
         const load = async () => {
             setLoading(true);
             setError(null);
@@ -42,7 +48,7 @@ export default function CohortStrengthsWeaknesses({ pgyFilter, mode }: Props) {
             }
         };
         load();
-    }, [pgyFilter]);
+    }, [pgyFilter, localProcedures]);
 
     const items = useMemo(() => {
         const qualified = procedures.filter(p => p.count >= 2);

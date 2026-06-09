@@ -1,4 +1,5 @@
 ### Project ignores
+.gitignore
 # Node / Next
 node_modules/
 .next/

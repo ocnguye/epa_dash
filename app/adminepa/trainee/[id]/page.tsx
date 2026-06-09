@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import CohortStrengthsWeaknesses, { ProcedureStat } from '../../../../components/CohortStrengthsWeaknesses';
+import ReportProgressCircle from '../../../../components/ReportProgressCircle';
 
 import { 
     Chart as ChartJS, 
@@ -402,28 +403,23 @@ export default function TraineePage() {
                   {/* Right Column */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0, alignSelf: 'flex-start', width: '100%' }}>
 
+                        {/* Report Progress Circle */}
+                        <ReportProgressCircle
+                            completed={stats?.total_reports || 0}
+                            total={1000}
+                            loading={loading}
+                        />
+
                         {/* Performance Summary */}
-                        <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', textAlign: 'center' }}>
+                        <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#374151' }}>Performance Summary</div>
                             {stats ? (
-                                <>
-                                    <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
-                                        <ProgressCircle
-                                            requestedCount={stats.feedback_requested || 0}
-                                            discussedCount={stats.feedback_discussed || 0}
-                                            notRequiredCount={Math.max(0, (stats.total_reports || 0) - (stats.feedback_requested || 0) - (stats.feedback_discussed || 0))}
-                                            totalCount={stats.total_reports || 0}
-                                            size={180}
-                                            strokeWidth={12}
-                                            loading={loading}
-                                        />
-                                    </div>
-                                    <div style={{ textAlign: 'left', color: '#374151', fontSize: 14 }}>
-                                        <div><strong>Average EPA:</strong> {(stats.avg_epa || 0).toFixed ? stats.avg_epa.toFixed(2) : stats.avg_epa}</div>
-                                        <div><strong>Total Reports:</strong> {stats.total_reports || 0}</div>
-                                        <div><strong>Procedures this month:</strong> {stats.procedures || 0}</div>
-                                    </div>
-                                </>
+                                <div style={{ color: '#374151', fontSize: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <div><strong>Average EPA:</strong> {stats.avg_epa ? Number(stats.avg_epa).toFixed(2) : 'N/A'}</div>
+                                    <div><strong>Procedures This Month:</strong> {stats.procedures || 0}</div>
+                                    <div><strong>Pending Feedback:</strong> {stats.feedback_requested || 0}</div>
+                                    <div><strong>Feedback Discussed:</strong> {stats.feedback_discussed || 0}</div>
+                                </div>
                             ) : (
                                 <div style={{ color: '#6b7280' }}>No summary available</div>
                             )}
@@ -431,7 +427,6 @@ export default function TraineePage() {
 
                         {/* Strengths & Improvements */}
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            {/* Tab-style title */}
                             <div style={{
                                 background: '#6b7280',
                                 color: '#fff',
@@ -457,23 +452,23 @@ export default function TraineePage() {
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
                                 overflow: 'hidden',
                             }}>
-                                {/* Strengths panel */}
                                 <div style={{ padding: 12, borderBottom: '1px solid #f1f1f3' }}>
                                     <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, color: '#374151' }}>Top Strengths</div>
                                     <div style={{ maxHeight: 280, overflowY: 'auto' }}>
                                         <CohortStrengthsWeaknesses
                                             mode="strengths"
                                             localProcedures={traineeLocalProcedures}
+                                            hideTitle={true}
                                         />
                                     </div>
                                 </div>
-                                {/* Weaknesses panel */}
                                 <div style={{ padding: 12 }}>
                                     <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, color: '#374151' }}>Areas to Improve</div>
                                     <div style={{ maxHeight: 280, overflowY: 'auto' }}>
                                         <CohortStrengthsWeaknesses
                                             mode="weaknesses"
                                             localProcedures={traineeLocalProcedures}
+                                            hideTitle={true}
                                         />
                                     </div>
                                 </div>

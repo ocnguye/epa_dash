@@ -9,7 +9,7 @@
  * Behavior:
  *   - Prevents duplicate users (matches on username OR first+last name)
  *   - Updates existing users ONLY if new fields differ (e.g., pgy)
- *   - Never overwrites first_name / last_name unless they match existing record
+ *   - Never overwrites first_name / last_name
  *   - Supports --dry-run mode to preview changes
  *
  * Usage:

@@ -12,10 +12,11 @@ export type ProcedureStat = {
 type Props = {
     pgyFilter?: number | null;
     mode: 'strengths' | 'weaknesses';
-    localProcedures?: ProcedureStat[]; // if provided, skip fetch and use this data
+    localProcedures?: ProcedureStat[];
+    hideTitle?: boolean;
 };
 
-export default function CohortStrengthsWeaknesses({ pgyFilter, mode, localProcedures }: Props) {
+export default function CohortStrengthsWeaknesses({ pgyFilter, mode, localProcedures, hideTitle }: Props) {
     const [loading, setLoading] = useState(!localProcedures);
     const [error, setError] = useState<string | null>(null);
     const [procedures, setProcedures] = useState<ProcedureStat[]>(localProcedures ?? []);
@@ -90,9 +91,11 @@ export default function CohortStrengthsWeaknesses({ pgyFilter, mode, localProced
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {!hideTitle && (
             <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, color: '#374151' }}>
                 {title}
             </div>
+            )}
             {loading ? (
                 <div style={{ color: '#6b7280', padding: '24px 0', textAlign: 'center' }}>Loading...</div>
             ) : error ? (

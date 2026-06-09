@@ -45,83 +45,67 @@ export async function GET(req: NextRequest) {
         // We also compute a per-report `seek_feedback` status for this trainee by
         // aggregating rows from feedback_requests (priority: feedback_requested > discussed > not_required).
         const [procedures] = await connection.execute(
-                `SELECT
+            `SELECT
                 r.ReportID AS report_id,
                 DATE_FORMAT(r.CreateDate, '%Y-%m-%d') AS create_date,
                 r.ProcedureDescList AS proc_desc,
                 REPLACE(NULLIF(TRIM(r.ProcedureCodeList), ''), ';', ', ') AS proc_code,
-                -- fluoroscopy fields parsed into reports by the migration script
                 r.fluoroscopy_time_raw AS fluoroscopy_time_raw,
                 r.fluoroscopy_time_minutes AS fluoroscopy_time_minutes,
                 r.fluoroscopy_time_unit AS fluoroscopy_time_unit,
                 r.fluoroscopy_dose_raw AS fluoroscopy_dose_raw,
                 r.fluoroscopy_dose_value AS fluoroscopy_dose_value,
                 r.fluoroscopy_dose_unit AS fluoroscopy_dose_unit,
-                                (
-                                    SELECT es.epa_score
-                                    FROM report_participants rp2
-                                    JOIN epa_scores es ON es.report_participant_id = rp2.id
-                                    WHERE rp2.report_id = r.ReportID AND rp2.role = 'trainee'
-                                    LIMIT 1
-                                ) AS oepa,
+                es.epa_score AS oepa,
                 r.complexity AS complexity,
                 r.Attending AS raw_attending,
                 r.Trainee AS raw_trainee,
-                CONCAT(u1.first_name, ' ', u1.last_name) AS trainee_name,
-                CONCAT(u2.first_name, ' ', u2.last_name) AS attending_name,
+                CONCAT(u_tr.first_name, ' ', u_tr.last_name) AS trainee_name,
+                -- GROUP_CONCAT aggregates multiple attendings into one row, e.g. "Dr. Smith, Dr. Jones"
                 (
-                  CASE
-                    WHEN (
-                      SELECT SUM(fr.status = 'feedback_requested') FROM feedback_requests fr
-                      WHERE fr.report_id = r.ReportID AND fr.trainee_user_id = ?
-                    ) > 0 THEN 'feedback_requested'
-                    WHEN (
-                      SELECT SUM(fr.status = 'discussed') FROM feedback_requests fr
-                      WHERE fr.report_id = r.ReportID AND fr.trainee_user_id = ?
-                    ) > 0 THEN 'discussed'
-                    ELSE 'not_required'
-                  END
+                    SELECT GROUP_CONCAT(CONCAT(u_att.first_name, ' ', u_att.last_name) SEPARATOR ', ')
+                    FROM report_participants rp_att
+                    JOIN users u_att ON u_att.user_id = rp_att.user_id
+                    WHERE rp_att.report_id = r.ReportID AND rp_att.role = 'attending'
+                ) AS attending_name,
+                (
+                    CASE
+                        WHEN (SELECT SUM(fr.status = 'feedback_requested') FROM feedback_requests fr
+                            WHERE fr.report_id = r.ReportID AND fr.trainee_user_id = ?) > 0
+                            THEN 'feedback_requested'
+                        WHEN (SELECT SUM(fr.status = 'discussed') FROM feedback_requests fr
+                            WHERE fr.report_id = r.ReportID AND fr.trainee_user_id = ?) > 0
+                            THEN 'discussed'
+                        ELSE 'not_required'
+                    END
                 ) AS seek_feedback
-            FROM reports r
-            LEFT JOIN users u1 ON (
-                r.trainee = u1.user_id
-                OR r.trainee = CONCAT(u1.first_name, ' ', u1.last_name)
-                OR r.trainee = u1.username
-            )
-            LEFT JOIN users u2 ON (
-                r.attending = u2.user_id
-                OR r.attending = CONCAT(u2.first_name, ' ', u2.last_name)
-                OR r.attending = u2.username
-            )
-            WHERE (
-                r.trainee = ?
-                OR r.trainee = CONCAT(?, ' ', ?)
-                OR r.trainee = ?
-            )
+            FROM report_participants rp
+            JOIN reports r ON r.ReportID = rp.report_id
+            JOIN users u_tr ON u_tr.user_id = rp.user_id
+            LEFT JOIN epa_scores es ON es.report_participant_id = rp.id
+            WHERE rp.user_id = ?
+            AND rp.role = 'trainee'
             ORDER BY r.CreateDate DESC`,
-            [user_id, user_id, user_id, user.first_name, user.last_name, user.username]
+            [user_id, user_id, user_id]
         );
-
+        
         // Stats: average EPA from reports + counts. For feedback counts we read from feedback_requests
         const [statsRows] = await connection.execute(
-            `SELECT
-                COALESCE(ROUND(AVG(es_main.epa_score), 2), 0) AS avg_epa,
-                COALESCE(ROUND(AVG(r.fluoroscopy_time_minutes), 2), 0) AS avg_fluoro_minutes,
-                COALESCE(ROUND(AVG(r.fluoroscopy_dose_value), 2), 0) AS avg_fluoro_dose,
-                COUNT(CASE WHEN MONTH(r.CreateDate) = MONTH(CURRENT_DATE()) AND YEAR(r.CreateDate) = YEAR(CURRENT_DATE()) THEN 1 END) AS procedures,
-                COUNT(*) AS total_reports,
-                COALESCE((SELECT COUNT(*) FROM feedback_requests fr WHERE fr.trainee_user_id = ? AND fr.status = 'feedback_requested'), 0) AS feedback_requested,
-                COALESCE((SELECT COUNT(*) FROM feedback_requests fr WHERE fr.trainee_user_id = ? AND fr.status = 'discussed'), 0) AS feedback_discussed
-             FROM reports r
-             JOIN report_participants rp_main
-                ON rp_main.report_id = r.ReportID
-                AND rp_main.role = 'trainee'
-                AND rp_main.user_id = ?
-
-            LEFT JOIN epa_scores es_main
-                ON es_main.report_participant_id = rp_main.id`
-             ,[user_id, user_id, user_id]
-        ) as [any[], any];
+        `SELECT
+            COALESCE(ROUND(AVG(es_main.epa_score), 2), 0) AS avg_epa,
+            COALESCE(ROUND(AVG(r.fluoroscopy_time_minutes), 2), 0) AS avg_fluoro_minutes,
+            COALESCE(ROUND(AVG(r.fluoroscopy_dose_value), 2), 0) AS avg_fluoro_dose,
+            COUNT(CASE WHEN MONTH(r.CreateDate) = MONTH(CURRENT_DATE()) AND YEAR(r.CreateDate) = YEAR(CURRENT_DATE()) THEN 1 END) AS procedures,
+            COUNT(DISTINCT rp_main.report_id) AS total_reports,
+            COALESCE((SELECT COUNT(*) FROM feedback_requests fr WHERE fr.trainee_user_id = ? AND fr.status = 'feedback_requested'), 0) AS feedback_requested,
+            COALESCE((SELECT COUNT(*) FROM feedback_requests fr WHERE fr.trainee_user_id = ? AND fr.status = 'discussed'), 0) AS feedback_discussed
+        FROM report_participants rp_main
+        JOIN reports r ON r.ReportID = rp_main.report_id
+        LEFT JOIN epa_scores es_main ON es_main.report_participant_id = rp_main.id
+        WHERE rp_main.user_id = ?
+        AND rp_main.role = 'trainee'`,
+        [user_id, user_id, user_id]
+    ) as [any[], any];
 
         const stats = statsRows[0] || {};
 

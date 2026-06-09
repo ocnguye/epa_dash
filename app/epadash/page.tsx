@@ -28,6 +28,7 @@ import {
 } from 'chart.js';
 import { useRouter } from 'next/navigation';
 import DashboardToggle from '@/components/DashboardToggle';
+import ReportProgressCircle from '@/components/ReportProgressCircle';
 
 ChartJS.register(
     CategoryScale, 
@@ -69,6 +70,7 @@ type Stats = {
     procedures: number;
     feedback_requested: number;
     total_procedures: number;
+    total_reports: number;
 };
 
 // helper function to get feedback status
@@ -136,6 +138,7 @@ export default function Dashboard() {
         procedures: 0,
         feedback_requested: 0,
         total_procedures: 0,
+        total_reports: 0,
     });
     const [procedures, setProcedures] = useState<Procedure[]>([]);
     const [loading, setLoading] = useState(true);
@@ -456,12 +459,9 @@ export default function Dashboard() {
 
             sortedProcedures.forEach(p => {
                 const k = fmtDay(new Date(p.create_date));
-                if (!map[k]) {
-                    map[k] = { sum: 0, count: 0 };
-                    orderedKeys.push(k); // preserve chronological order
-                }
+                if (!map[k]) { map[k] = { sum: 0, count: 0 }; orderedKeys.push(k); }
                 const v = Number(p.oepa);
-                if (Number.isFinite(v)) {
+                if (Number.isFinite(v) && v > 0) {  // ← add v > 0 guard
                     map[k].sum += v;
                     map[k].count += 1;
                 }
@@ -491,7 +491,7 @@ export default function Dashboard() {
                     const k = fmtDay(new Date(p.create_date));
                     if (!map[k]) map[k] = { sum: 0, count: 0 };
                     const v = Number(p.oepa);
-                    if (Number.isFinite(v)) { map[k].sum += v; map[k].count += 1; }
+                    if (Number.isFinite(v) && v > 0) { map[k].sum += v; map[k].count += 1; }
                 });
                 epaLabels = buckets.map(d => {
                     const parts = d.split('-');
@@ -514,7 +514,10 @@ export default function Dashboard() {
                     const k = monthKey(date);
                     if (!map[k]) map[k] = { sum: 0, count: 0 };
                     const v = Number(p.oepa);
-                    if (Number.isFinite(v)) { map[k].sum += v; map[k].count += 1; }
+                    if (Number.isFinite(v) && v > 0) {  // ← add v > 0 guard
+                        map[k].sum += v;
+                        map[k].count += 1;
+                    }
                 });
                 epaLabels = buckets.map(k => {
                     const [y, m] = k.split('-');
@@ -533,9 +536,7 @@ export default function Dashboard() {
         epaDatasets.push({
             label: 'EPA Score',
             data: epaData,
-            // precise timestamps aligned with labels to allow time-based slope calculation
-            // labels are either YYYY-MM-DD (daily) or month labels; we attach matching
-            // ISO dates so ChartConfigs can parse them reliably.
+            spanGaps: true, // allow gaps to be filled for areas missing EPA data
             timestamps: epaTimestamps.map(ts => ts),
             borderColor: '#afd5f0',
             backgroundColor: 'rgba(74, 144, 226, 0.1)',
@@ -585,13 +586,15 @@ export default function Dashboard() {
         const complexityVsEpaData = {
             datasets: [
                 {
-                    label: 'Procedures',
-                    data: filteredProcedures.map(proc => ({ x: proc.complexity, y: proc.oepa })),
-                    backgroundColor: '#afd5f0',
-                    borderColor: '#fff',
-                    borderWidth: 2,
-                    pointRadius: 8,
-                    pointHoverRadius: 10,
+                label: 'Procedures',
+                data: filteredProcedures
+                    .filter(proc => proc.oepa != null && Number(proc.oepa) > 0)  // ← add filter
+                    .map(proc => ({ x: proc.complexity, y: proc.oepa })),
+                backgroundColor: '#afd5f0',
+                borderColor: '#fff',
+                borderWidth: 2,
+                pointRadius: 8,
+                pointHoverRadius: 10,
                 }
             ]
         };
@@ -619,8 +622,9 @@ export default function Dashboard() {
             return stripped.length > maxLength ? stripped.slice(0, maxLength - 1) + '…' : stripped;
         };
 
-        const sortedEntries = Object.values(procTypeStats).sort((a, b) => procSortAsc ? a.total - b.total : b.total - a.total);
-
+        const sortedEntries = Object.values(procTypeStats)
+            .filter(stat => stat.count > 0)  // ← exclude procedures with no valid EPA scores
+            .sort((a, b) => procSortAsc ? a.total - b.total : b.total - a.total);
         const labels = sortedEntries.map(stat => trimProcedureName(stat.desc || 'Unknown'));
         const descriptions = sortedEntries.map(stat => stat.desc || '');
         const counts = sortedEntries.map(stat => stat.count || 0);
@@ -650,6 +654,9 @@ export default function Dashboard() {
                 }
             ]
         };
+
+        console.log('STATS OBJECT:', stats);
+        console.log('TOTAL_REPORTS:', stats.total_reports);
 
         return {
             epaTrend: epaTrendData,
@@ -784,6 +791,29 @@ export default function Dashboard() {
                     No data to display for the selected timeframe
                 </div>
             );
+        }
+
+        if (activeTab === 'EPA Trend' && chartData?.epaTrend) {
+            const hasAnyData = chartData.epaTrend.datasets[0]?.data.some((v: null) => v !== null && Number(v) > 0);
+            if (!hasAnyData) {
+                return (
+                <div style={{
+                    height: 280,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#9ca3af',
+                    gap: 8,
+                }}>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 4-6" strokeDasharray="4 2"/>
+                    </svg>
+                    <div style={{ fontSize: 15, fontWeight: 600 }}>No EPA scores recorded yet</div>
+                    <div style={{ fontSize: 13 }}>Scores will appear here once an attending submits feedback</div>
+                </div>
+                );
+            }
         }
 
         switch (activeTab) {
@@ -1014,9 +1044,9 @@ export default function Dashboard() {
                                 <div style={{ fontSize: 48, color: '#afd5f0', fontWeight: 700, marginBottom: 8 }}>
                                     {loading
                                         ? '...'
-                                        : typeof stats.avg_epa === 'number' && !isNaN(stats.avg_epa)
-                                            ? stats.avg_epa.toFixed(2)
-                                            : '0.00'}
+                                        : typeof stats.avg_epa === 'number' && stats.avg_epa > 0
+                                        ? stats.avg_epa.toFixed(2)
+                                        : <span style={{ fontSize: 32, color: '#9ca3af' }}>N/A</span>}
                                 </div>
                                 <div style={{ fontSize: 12, color: '#000', fontWeight: 600, textTransform: 'uppercase' }}>
                                     Current Adjusted EPA<br />Average
@@ -1335,9 +1365,14 @@ export default function Dashboard() {
                                                         <div style={{ fontSize: 12, color: '#666' }}>{proc.attending_name}</div>
                                                     </td>
                                                     <td style={{ padding: '8px 12px', color: '#000' }}>{proc.proc_desc}</td>
-                                                    <td style={{ padding: '8px 12px', color: '#000', textAlign: 'center', fontWeight: 600 }}
-                                                    title={getEPADescription(proc.oepa)}>
-                                                        {proc.oepa}</td>
+                                                    <td
+                                                    style={{ padding: '8px 12px', color: '#000', textAlign: 'center', fontWeight: 600 }}
+                                                    title={proc.oepa ? getEPADescription(proc.oepa) : 'No EPA score recorded'}
+                                                    >
+                                                        {proc.oepa && Number(proc.oepa) > 0 ? proc.oepa : (
+                                                            <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>—</span>
+                                                        )}
+                                                    </td>
                                                 </tr>
                                             ))
                                         )}
@@ -1349,32 +1384,12 @@ export default function Dashboard() {
 
                     {/* Right Column: Progress Circle and Recent Feedback */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'stretch' }}>
-                        {/* Large Progress Circle */}
-                        <div style={{
-                            padding: 24,
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            minHeight: 280,
-                        }}>
-                            <ProgressCircle
-                                // pass raw counts so the circle shows discussed/ requested and computes percentage
-                                // provide sensible fallbacks in case the backend omits certain stats
-                                requestedCount={typeof stats.feedback_requested === 'number' && stats.feedback_requested >= 0
-                                    ? stats.feedback_requested
-                                    : procedures.filter(p => p.seek_feedback === 'feedback_requested').length}
-                                discussedCount={procedures.filter(p => p.seek_feedback === 'discussed').length}
-                                notRequiredCount={procedures.filter(p => p.seek_feedback === 'not_required').length}
-                                totalCount={typeof stats.total_procedures === 'number' && stats.total_procedures > 0
-                                    ? stats.total_procedures
-                                    : (typeof stats.procedures === 'number' && stats.procedures > 0
-                                        ? stats.procedures
-                                        : procedures.length)}
-                                size={275}
-                                strokeWidth={18}
-                                loading={loading}
-                            />
-                        </div>
+                        {/* Report Progress Circle */}
+                        <ReportProgressCircle
+                            completed={stats.total_reports}
+                            total={1000}
+                            loading={loading}
+                        />
 
                         {/* Key Performance Metrics (replaces recent feedback on trainee dashboard) */}
                         <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>

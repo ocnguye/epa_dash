@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
             [user_id, user_id, user_id, user.first_name, user.last_name, user.username]
         );
 
-                // Stats: average EPA from reports + counts. For feedback counts we read from feedback_requests
+        // Stats: average EPA from reports + counts. For feedback counts we read from feedback_requests
         const [statsRows] = await connection.execute(
             `SELECT
                 COALESCE(ROUND(AVG(es_main.epa_score), 2), 0) AS avg_epa,
@@ -113,14 +113,14 @@ export async function GET(req: NextRequest) {
                 COALESCE((SELECT COUNT(*) FROM feedback_requests fr WHERE fr.trainee_user_id = ? AND fr.status = 'feedback_requested'), 0) AS feedback_requested,
                 COALESCE((SELECT COUNT(*) FROM feedback_requests fr WHERE fr.trainee_user_id = ? AND fr.status = 'discussed'), 0) AS feedback_discussed
              FROM reports r
-             LEFT JOIN report_participants rp_main ON rp_main.report_id = r.ReportID AND rp_main.role = 'trainee'
-             LEFT JOIN epa_scores es_main ON es_main.report_participant_id = rp_main.id
-             WHERE (
-                r.trainee = ?
-                OR r.trainee = CONCAT(?, ' ', ?)
-                OR r.trainee = ?
-             )`,
-            [user_id, user_id, user_id, user.first_name, user.last_name, user.username]
+             JOIN report_participants rp_main
+                ON rp_main.report_id = r.ReportID
+                AND rp_main.role = 'trainee'
+                AND rp_main.user_id = ?
+
+            LEFT JOIN epa_scores es_main
+                ON es_main.report_participant_id = rp_main.id`
+             ,[user_id, user_id, user_id]
         ) as [any[], any];
 
         const stats = statsRows[0] || {};

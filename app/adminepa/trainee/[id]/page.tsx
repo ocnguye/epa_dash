@@ -453,22 +453,18 @@ export default function TraineePage() {
                                 overflow: 'hidden',
                             }}>
                                 <div style={{ padding: 12, borderBottom: '1px solid #f1f1f3' }}>
-                                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, color: '#374151' }}>Top Strengths</div>
-                                    <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                                    <div style={{ height: 280}}>
                                         <CohortStrengthsWeaknesses
                                             mode="strengths"
                                             localProcedures={traineeLocalProcedures}
-                                            hideTitle={true}
                                         />
                                     </div>
                                 </div>
                                 <div style={{ padding: 12 }}>
-                                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, color: '#374151' }}>Areas to Improve</div>
-                                    <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                                    <div style={{ height: 280 }}>
                                         <CohortStrengthsWeaknesses
                                             mode="weaknesses"
                                             localProcedures={traineeLocalProcedures}
-                                            hideTitle={true}
                                         />
                                     </div>
                                 </div>

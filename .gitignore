@@ -22,8 +22,7 @@ dist/
 *.xlsx
 *.xls
 *.xlsm
-data_import.sh
-proctype_import.sh
+*.csv
 
 # Migrations (if you keep SQL migrations outside version control temporarily)
 migrations/

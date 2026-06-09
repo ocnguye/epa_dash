@@ -98,13 +98,15 @@ export default function TraineePage() {
                 statsMap[key].count += 1;
             }
         });
-        return Object.values(statsMap).map(s => ({
-            desc: s.desc,
-            code: s.code,
-            avg_epa: s.count ? s.sum / s.count : 0,
-            count: s.count,
-        }));
-    }, [procedures]);
+        return Object.values(statsMap)
+            .filter(s => s.count > 0)  // add this
+            .map(s => ({
+                desc: s.desc,
+                code: s.code,
+                avg_epa: s.count ? s.sum / s.count : 0,
+                count: s.count,
+            }));
+        }, [procedures]);
     
     // grabbing cohort avg EPA from URL (passed by parent component)
     const cohortAvgEpa = useMemo(() => {
@@ -219,7 +221,9 @@ export default function TraineePage() {
 
     const truncate = (txt: string, n = 30) => txt && txt.length > n ? txt.slice(0, n - 1).trim() + '…' : txt;
 
-    const sortedEntries = Object.values(statsMap).sort((a, b) => {
+    const sortedEntries = Object.values(statsMap)
+        .filter(stat => stat.count > 0)
+        .sort((a, b) => {
         const avgA = a.count ? a.sum / a.count : 0;
         const avgB = b.count ? b.sum / b.count : 0;
         return procSortAsc ? avgA - avgB : avgB - avgA;

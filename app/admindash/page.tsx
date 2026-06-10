@@ -57,6 +57,7 @@ export default function AdminDash() {
 
     const [summary, setSummary] = useState<AttendingSummary[]>([]);
     const [details, setDetails] = useState<Record<number, ReportDetail[]>>({});
+    const [totalMissingEpa, setTotalMissingEpa] = useState<number>(0);
 
     // drill-down state
     const [selectedAttending, setSelectedAttending] = useState<AttendingSummary | null>(null);
@@ -93,6 +94,7 @@ export default function AdminDash() {
                 }
                 setSummary(data.summary || []);
                 setDetails(data.details || []);
+                setTotalMissingEpa(data.total_missing_epa ?? 0);
             } catch (err: any) {
                 setError(err?.message || 'Server error');
             } finally {
@@ -121,11 +123,10 @@ export default function AdminDash() {
     const metrics = useMemo(() => {
         const rates = summary.filter(a => a.provision_rate_pct !== null).map(a => a.provision_rate_pct as number);
         const avgRate = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : null;
-        const totalMissing = summary.reduce((s, a) => s + a.reports_missing_epa, 0);
         const scores = summary.filter(a => a.avg_epa_score !== null).map(a => a.avg_epa_score as number);
-        const avgScore = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : null;
-        return { total: summary.length, avgRate, totalMissing, avgScore };
-    }, [summary]);
+        const avgScore = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2) : null;
+        return { total: summary.length, avgRate, totalMissing: totalMissingEpa, avgScore };
+    }, [summary, totalMissingEpa]);
 
     const detailRows = useMemo(() => {
         if (!selectedAttending) return [];
@@ -407,7 +408,7 @@ export default function AdminDash() {
                                         </div>
                                         <span style={{ textAlign: 'right', color: '#6b7280', fontSize: 13 }}>{a.reports_with_epa}</span>
                                         <span style={{ textAlign: 'right', fontSize: 13, color: a.reports_missing_epa > 0 ? '#dc2626' : '#6b7280', fontWeight: a.reports_missing_epa > 0 ? 600 : 400 }}>{a.reports_missing_epa}</span>
-                                        <span style={{ textAlign: 'right', color: '#6b7280', fontSize: 13 }}>{a.avg_epa_score !== null ? a.avg_epa_score.toFixed(1) : '—'}</span>
+                                        <span style={{ textAlign: 'right', color: '#6b7280', fontSize: 13 }}>{a.avg_epa_score !== null ? a.avg_epa_score.toFixed(2) : '—'}</span>
                                     </div>
                                 ))}
                             </div>

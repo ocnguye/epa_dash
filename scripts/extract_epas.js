@@ -185,13 +185,27 @@ function extractEpaAssignments(text, participants, reportId) {  // ← add repor
     }
   };
 
-  for (const field of fields) {
+  for (let fi = 0; fi < fields.length; fi++) {
+    const field = fields[fi];
+
     const andCont = field.match(/^and\s+(.+)/i);
     if (andCont && lastWasResident) { processField(andCont[1].trim()); continue; }
+
     const lm = field.match(LABEL_RE);
-    if (!lm) { lastWasResident=false; continue; }
-    lastWasResident=true;
-    if (lm[1].trim()) processField(lm[1].trim());
+    if (!lm) { lastWasResident = false; continue; }
+    lastWasResident = true;
+
+    let content = lm[1].trim();
+    if (content && !content.match(/EPA/i)) {
+        const next = fields[fi + 1] || '';
+        const nextEpa = next.match(/^(?:Trainee\s+)?EPA\s*[:#]?\s*([1-5NR].*)/i);
+        if (nextEpa) {
+            content = content + '  Trainee EPA: ' + nextEpa[1].trim();
+            fi++;
+        }
+    }
+
+    if (content) processField(content);
   }
 
   return { scores, unmatched };

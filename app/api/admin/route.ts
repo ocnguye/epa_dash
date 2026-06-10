@@ -196,6 +196,14 @@ export async function GET(req: NextRequest) {
             ORDER BY rp_att.user_id, r.CreateDate DESC
         `);
 
+        const [missingRows] = await connection.execute(`
+            SELECT COUNT(DISTINCT rp.report_id) AS total_missing_epa
+            FROM report_participants rp
+            LEFT JOIN epa_scores es ON es.report_participant_id = rp.id
+            WHERE rp.role = 'trainee'
+            AND es.id IS NULL
+        `);
+
         await connection.end();
 
         // ── Post-process ──────────────────────────────────────────────────────
@@ -259,10 +267,13 @@ export async function GET(req: NextRequest) {
             });
         }
 
+        const totalMissingEpa = Number((missingRows as any[])[0]?.total_missing_epa ?? 0);
+
         return NextResponse.json({
             success: true,
             summary,               // array of per-attending provision stats
             details: detailsByAttending, // keyed by attending_user_id
+            total_missing_epa: totalMissingEpa,
         });
 
     } catch (err) {

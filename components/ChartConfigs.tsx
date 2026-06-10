@@ -306,6 +306,7 @@ export const hoverSlopePlugin = {
     id: 'hoverSlopeLine',
     afterDraw(chart: any) {
         if (!chart.options.plugins?.hoverSlopeLine) return;
+        if (!chart.scales?.y || !chart.scales?.x) return;
 
         // ── 1. Compute slope from the active (non-cohort) dataset ──────────────
         const datasets = chart.data.datasets || [];

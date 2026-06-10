@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 
 type Props = {
   className?: string;
-  // paths to navigate between. Defaults preserve existing behavior for non-admin pages.
+  // paths to navigate between.
   epaPath?: string;
   rprPath?: string;
 };

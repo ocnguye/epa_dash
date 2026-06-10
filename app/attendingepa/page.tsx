@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import AdminCohortChart from '../../components/AdminCohortChart';
-import AdminTraineeTable from '../../components/AdminTraineeTable';
+import AttendingCohortChart from '../../components/AttendingCohortChart';
+import AttendingTraineeTable from '../../components/AttendingTraineeTable';
 import CohortStrengthsWeaknesses from '../../components/CohortStrengthsWeaknesses';
 import DashboardToggle from '../../components/DashboardToggle';
 import { useRouter } from 'next/navigation';
@@ -20,7 +20,7 @@ type Trainee = {
     report_count?: number;
 };
 
-export default function AdminPage() {
+export default function AttendingPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export default function AdminPage() {
                 // store current user for personalized header and profile edits
                 setCurrentUser(meJson.user || null);
 
-                const res = await fetch('/api/adminepa/trainees');
+                const res = await fetch('/api/attendingepa/trainees');
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     setError(err?.message || 'Failed to load trainees');
@@ -167,7 +167,7 @@ export default function AdminPage() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        <DashboardToggle epaPath="/adminepa" rprPath="/adminrpr" />
+                        <DashboardToggle epaPath="/attendingepa" rprPath="/attendingrpr" />
                         <button
                             onClick={() => {
                                 // Prefill form with current user values like trainee dashboard
@@ -479,7 +479,7 @@ export default function AdminPage() {
                             <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                                 <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12, flexShrink: 0 }}>Cohort EPA Comparison</div>
                                 <div style={{ overflowY: 'auto', flex: 1 }}>
-                                    <AdminCohortChart
+                                    <AttendingCohortChart
                                         trainees={filtered}
                                         allTrainees={trainees}
                                         pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
@@ -544,7 +544,7 @@ export default function AdminPage() {
                                 <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12 }}>
                                     Trainees ({filtered.length})
                                 </div>
-                                <AdminTraineeTable
+                                <AttendingTraineeTable
                                     trainees={filtered}
                                     maxHeight={strengthsHeight}
                                     pgyAvgMap={pgyAvgMap}

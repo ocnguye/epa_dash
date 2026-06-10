@@ -14,7 +14,7 @@ const TAB_WIDTH = 240;
 const TAB_HEIGHT = 44;
 const TAB_OVERLAP = 10;
 
-export default function AdminRprPage() {
+export default function AttendingRprPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('Residency Analytics');
@@ -165,7 +165,7 @@ export default function AdminRprPage() {
 
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
-              <DashboardToggle epaPath="/adminepa" rprPath="/adminrpr" />
+              <DashboardToggle epaPath="/attendingepa" rprPath="/attendingrpr" />
             </div>
             <button
               onClick={() => {

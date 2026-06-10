@@ -16,7 +16,7 @@ type Trainee = {
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend);
 
-export default function AdminCohortChart({
+export default function AttendingCohortChart({
     trainees,
     allTrainees,
     pgyFilter,

@@ -31,8 +31,8 @@ export default function CohortStrengthsWeaknesses({ pgyFilter, mode, localProced
             setError(null);
             try {
                 const url = pgyFilter != null
-                    ? `/api/adminepa/cohortproc?pgy=${pgyFilter}`
-                    : `/api/adminepa/cohortproc`;
+                    ? `/api/attendingepa/cohortproc?pgy=${pgyFilter}`
+                    : `/api/attendingepa/cohortproc`;
                 const res = await fetch(url);
                 if (!res.ok) {
                     const body = await res.json().catch(() => ({}));

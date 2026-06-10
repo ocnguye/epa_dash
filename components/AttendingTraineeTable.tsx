@@ -17,7 +17,7 @@ type Trainee = {
 
 type SortKey = 'name' | 'pgy' | 'avg_epa' | 'report_count';
 
-export default function AdminTraineeTable({
+export default function AttendingTraineeTable({
     trainees,
     maxHeight,
     pgyAvgMap = {},
@@ -148,7 +148,7 @@ export default function AdminTraineeTable({
                                     <button
                                         onClick={() => {
                                             const encoded = btoa(cohortAvg.toFixed(2));
-                                            router.push(`/adminepa/trainee/${t.user_id}?ca=${encoded}`);
+                                            router.push(`/attendingepa/trainee/${t.user_id}?ca=${encoded}`);
                                         }}
                                         style={{ background: 'linear-gradient(135deg, #4a90e2, #2b7bd3)', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}
                                     >

@@ -8,7 +8,7 @@ type Stats = {
   disagree_percent: number;
 };
 
-export default function RprRpr4Compare({ score = 4, setScore }: { score?: number | null; setScore?: (n: number | null) => void }) {
+export default function Rpr4Compare({ score = 4, setScore }: { score?: number | null; setScore?: (n: number | null) => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [trainee, setTrainee] = useState<Stats | null>(null);

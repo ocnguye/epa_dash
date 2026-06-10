@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import RprTable from '../../components/RprTable';
-import RprRpr4Compare from '../../components/RprRpr4Compare';
+import Rpr4Compare from '../../components/Rpr4Compare';
 import RprCohortChart from '../../components/RprCohortChart';
 import RprBreakdown from '../../components/RprBreakdown';
 import DashboardToggle from '../../components/DashboardToggle';
@@ -280,7 +280,7 @@ export default function RprDashPage() {
                                         <RprCohortChart score={cohortScore} />
                                     </div>
                                     <div style={{ minHeight: 560, height: '100%' }}>
-                                        <RprRpr4Compare score={cohortScore} setScore={setCohortScore} />
+                                        <Rpr4Compare score={cohortScore} setScore={setCohortScore} />
                                     </div>
                                 </div>
 

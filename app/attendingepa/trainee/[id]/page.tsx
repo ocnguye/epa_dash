@@ -61,7 +61,7 @@ export default function TraineePage() {
             setLoading(true);
             setError(null);
             try {
-                const res = await fetch(`/api/adminepa/trainees/${resolvedId}`, {
+                const res = await fetch(`/api/attendingepa/trainees/${resolvedId}`, {
                     credentials: 'same-origin',
                     headers: { Accept: 'application/json' },
                 });
@@ -291,7 +291,7 @@ export default function TraineePage() {
                       </div>
                   </div>
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <button onClick={() => router.push('/adminepa')} style={{ background: '#fff', color: '#374151', border: '1px solid rgba(55,65,81,0.08)', borderRadius: 8, padding: '10px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Back to Trainees</button>
+                      <button onClick={() => router.push('/attendingepa')} style={{ background: '#fff', color: '#374151', border: '1px solid rgba(55,65,81,0.08)', borderRadius: 8, padding: '10px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Back to Trainees</button>
                   </div>
               </div>
 

@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
                  LEFT JOIN report_participants rp ON rp.user_id = u.user_id AND rp.role = 'trainee'
                  LEFT JOIN epa_scores es ON es.report_participant_id = rp.id
              WHERE u.role != 'attending'
+                AND u.role != 'admin'
              GROUP BY u.user_id
              ORDER BY avg_epa DESC, u.pgy DESC`);
 

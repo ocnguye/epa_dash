@@ -142,7 +142,17 @@ export const epaTrendOptions: ChartOptions<'line'> = {
                         } else {
                             lines.push(`${context.dataset.label}: ${String(val)}`);
                         }
-                        // Remove the cohort average block entirely — label alone is sufficient
+
+                        // Show report count only for the EPA Score dataset when count > 1
+                        const ds = context.dataset as any;
+                        if (!String(ds.label ?? '').toLowerCase().includes('cohort')) {
+                            const counts = ds.reportCounts as number[] | undefined;
+                            const count = counts?.[context.dataIndex];
+                            if (typeof count === 'number' && count > 1) {
+                                lines.push(`Report Count: ${count}`);
+                            }
+                        }
+
                         return lines;
                     } catch (e) {
                         return `${context.dataset.label}: ${context.parsed?.y ?? 'N/A'}`;
@@ -265,7 +275,7 @@ export const procedureSpecificOptions: ChartOptions<'bar'> = {
                         const avg = context.parsed && typeof context.parsed.y === 'number' ? context.parsed.y : NaN;
                         const avgLine = `Average EPA: ${isFinite(avg) ? avg.toFixed(1) : 'N/A'}`;
                         const count = ds?.counts && typeof ds.counts[idx] !== 'undefined' ? ds.counts[idx] : null;
-                        const countLine = count !== null ? `Count: ${count}` : null;
+                        const countLine = count !== null ? `Report Count: ${count}` : null;
                         return countLine ? [avgLine, countLine] : [avgLine];
                     } catch (e) {
                         return `Average EPA: ${context.parsed?.y ?? 'N/A'}`;
@@ -304,11 +314,11 @@ export const procedureSpecificOptions: ChartOptions<'bar'> = {
 // HOVER SLOPE PLUGIN for EPA Trend: comment this entire block out to disable
 export const hoverSlopePlugin = {
     id: 'hoverSlopeLine',
-    afterDraw(chart: any) {
+
+    _drawSlopeLabel(chart: any) {
         if (!chart.options.plugins?.hoverSlopeLine) return;
         if (!chart.scales?.y || !chart.scales?.x) return;
 
-        // ── 1. Compute slope from the active (non-cohort) dataset ──────────────
         const datasets = chart.data.datasets || [];
         const dataset = datasets.find(
             (ds: any) => !String(ds.label ?? '').toLowerCase().includes('cohort')
@@ -323,12 +333,14 @@ export const hoverSlopePlugin = {
                 const dsTimestamps = (dataset as any).timestamps as Array<number | string> | undefined;
                 if (dsTimestamps && typeof dsTimestamps[i] !== 'undefined') {
                     const maybe = dsTimestamps[i];
-                    const parsed = typeof maybe === 'number' ? maybe : Date.parse(String(maybe));
+                    const parsed = typeof maybe === 'number'
+                        ? maybe
+                        : Date.parse(String(maybe).replace('Z', '').replace(/T.*$/, '') + 'T00:00:00');
                     if (!Number.isNaN(parsed)) t = parsed;
                 }
 
                 if (typeof t === 'undefined' && v && typeof v === 'object' && (v as any).x) {
-                    const parsed = Date.parse(String((v as any).x));
+                    const parsed = Date.parse(String((v as any).x).replace('Z', '').replace(/T.*$/, '') + 'T00:00:00');
                     if (!Number.isNaN(parsed)) t = parsed;
                 }
 
@@ -348,31 +360,32 @@ export const hoverSlopePlugin = {
         if (points.length < 2) return;
 
         const pointsWithTime = points.filter(p => typeof p.t === 'number');
-        let first: { v: number; i: number; t?: number };
-        let last: { v: number; i: number; t?: number };
 
-        if (pointsWithTime.length >= 2) {
-            pointsWithTime.sort((a, b) => a.t! - b.t!);
-            first = pointsWithTime[0];
-            last = pointsWithTime[pointsWithTime.length - 1];
-        } else {
-            first = points[0];
-            last = points[points.length - 1];
-        }
-
-        const deltaY = last.v - first.v;
         let slopeLabel = '';
-        const slopeColor = deltaY >= 0 ? '#16a34a' : '#dc2626';
+        let slopeColor = '#16a34a';
 
-        if (typeof first.t === 'number' && typeof last.t === 'number' && last.t !== first.t) {
-            const days = (last.t - first.t) / (1000 * 60 * 60 * 24);
-            const slopePerDay = deltaY / days;
-            const slopePerMonth = slopePerDay * 30;
-            slopeLabel = `Trend: ${slopePerMonth >= 0 ? '+' : ''}${slopePerMonth.toFixed(2)} EPA/month (${slopePerDay >= 0 ? '+' : ''}${slopePerDay.toFixed(3)} EPA/day)`;
+        const n = pointsWithTime.length;
+        if (n >= 2) {
+            const meanT = pointsWithTime.reduce((s, p) => s + p.t!, 0) / n;
+            const meanV = pointsWithTime.reduce((s, p) => s + p.v, 0) / n;
+            const num = pointsWithTime.reduce((s, p) => s + (p.t! - meanT) * (p.v - meanV), 0);
+            const den = pointsWithTime.reduce((s, p) => s + (p.t! - meanT) ** 2, 0);
+
+            if (den !== 0) {
+                const slopePerMs = num / den;
+                const slopePerDay = slopePerMs * (1000 * 60 * 60 * 24);
+                const slopePerMonth = slopePerDay * 30;
+                slopeColor = slopePerDay >= 0 ? '#16a34a' : '#dc2626';
+                slopeLabel = `Trend: ${slopePerMonth >= 0 ? '+' : ''}${slopePerMonth.toFixed(2)} EPA/month (${slopePerDay >= 0 ? '+' : ''}${slopePerDay.toFixed(3)} EPA/day)`;
+            }
         }
 
-        if (!slopeLabel) {
+        if (!slopeLabel && points.length >= 2) {
+            const first = points[0];
+            const last = points[points.length - 1];
             const idxDiff = last.i - first.i;
+            const deltaY = last.v - first.v;
+            slopeColor = deltaY >= 0 ? '#16a34a' : '#dc2626';
             if (idxDiff !== 0) {
                 const slopePerProc = deltaY / idxDiff;
                 slopeLabel = `Trend: ${slopePerProc >= 0 ? '+' : ''}${slopePerProc.toFixed(3)} EPA/procedure`;
@@ -381,25 +394,39 @@ export const hoverSlopePlugin = {
             }
         }
 
-        // ── 2. Always draw the slope label in the top-left of the chart area ──
-        const ctx = chart.ctx;
+        if (!slopeLabel) return;
+
         const topY = chart.scales.y.top;
         const leftX = chart.scales.x.left;
+        if (!Number.isFinite(topY) || !Number.isFinite(leftX)) return;
 
+        const ctx = chart.ctx;
         ctx.save();
         ctx.font = '600 12px Ubuntu, sans-serif';
         ctx.fillStyle = slopeColor;
         ctx.textAlign = 'left';
         ctx.fillText(slopeLabel, leftX + 8, topY + 16);
         ctx.restore();
+    },
 
-        // ── 3. Vertical hover line — only when a point is active ──────────────
+    afterRender(chart: any) {
+        this._drawSlopeLabel(chart);
+    },
+
+    afterDraw(chart: any) {
+        this._drawSlopeLabel(chart);
+
+        // Vertical hover line — only when a point is active
+        if (!chart.options.plugins?.hoverSlopeLine) return;
+        if (!chart.scales?.y || !chart.scales?.x) return;
         if (!chart.tooltip?._active?.length) return;
 
         const activePoint = chart.tooltip._active[0];
         const x = activePoint.element.x;
+        const topY = chart.scales.y.top;
         const bottomY = chart.scales.y.bottom;
 
+        const ctx = chart.ctx;
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(x, topY);

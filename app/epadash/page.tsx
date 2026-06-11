@@ -388,7 +388,8 @@ export default function Dashboard() {
     }, [selectedProcedure]);
 
     const feedbackRate = stats.total_procedures ? (stats.feedback_requested / stats.total_procedures) * 100 : 0;
-
+    const parseDate = (d: string) => new Date(d.replace('Z', ''));
+    
     // filter procedures by timeframe for charts/tables
     const filteredProcedures = useMemo(() => {
         if (!procedures || procedures.length === 0) return [] as Procedure[];
@@ -404,7 +405,7 @@ export default function Dashboard() {
             cutoff = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 365);
         }
         return procedures.filter(p => {
-            const d = new Date(p.create_date);
+            const d = new Date(parseDate(p.create_date));
             return d >= cutoff;
         });
     }, [procedures, timeframe]);
@@ -439,7 +440,7 @@ export default function Dashboard() {
     const chartData = useMemo(() => {
     if (!displayProcedures.length) return null;
     // EPA Trend Data - chronological order
-    const sortedProcedures = [...displayProcedures].sort((a, b) => new Date(a.create_date).getTime() - new Date(b.create_date).getTime());
+    const sortedProcedures = [...displayProcedures].sort((a, b) => new Date(parseDate(a.create_date)).getTime() - new Date(parseDate(b.create_date)).getTime());
 
         // Helper formatters
         const fmtDay = (d: Date) => d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -451,6 +452,7 @@ export default function Dashboard() {
     let epaData: Array<number | null> = [];
     // precise ISO-like timestamps matching each label (YYYY-MM-DD or YYYY-MM-01 for months)
     let epaTimestamps: string[] = [];
+    let epaReportCounts: number[] = [];
 
         if (timeframe === 'all') {
             // Aggregate by day (same as last_month but without a fixed window)
@@ -458,7 +460,7 @@ export default function Dashboard() {
             const orderedKeys: string[] = [];
 
             sortedProcedures.forEach(p => {
-                const k = fmtDay(new Date(p.create_date));
+                const k = fmtDay(new Date(parseDate(p.create_date)));
                 if (!map[k]) { map[k] = { sum: 0, count: 0 }; orderedKeys.push(k); }
                 const v = Number(p.oepa);
                 if (Number.isFinite(v) && v > 0) {  // ← add v > 0 guard
@@ -474,7 +476,8 @@ export default function Dashboard() {
             epaData = orderedKeys.map(k => 
                 map[k].count ? Number((map[k].sum / map[k].count).toFixed(2)) : null
             );
-            epaTimestamps = orderedKeys.map(k => k); // YYYY-MM-DD keys
+            epaTimestamps = orderedKeys.map(k => `${k}T00:00:00`);
+            epaReportCounts = orderedKeys.map(k => map[k].count ?? 0);
         } else {
             // build buckets depending on timeframe
             const now = new Date();
@@ -488,7 +491,7 @@ export default function Dashboard() {
                 // aggregate by day
                 const map: Record<string, { sum: number; count: number }> = {};
                 sortedProcedures.forEach(p => {
-                    const k = fmtDay(new Date(p.create_date));
+                    const k = fmtDay(new Date(parseDate(p.create_date)));
                     if (!map[k]) map[k] = { sum: 0, count: 0 };
                     const v = Number(p.oepa);
                     if (Number.isFinite(v) && v > 0) { map[k].sum += v; map[k].count += 1; }
@@ -499,7 +502,8 @@ export default function Dashboard() {
                     return dayLabel(date);
                 });
                 epaData = buckets.map(k => map[k] && map[k].count ? Number((map[k].sum / map[k].count).toFixed(2)) : null);
-                epaTimestamps = buckets.slice(); // buckets are YYYY-MM-DD
+                epaTimestamps = buckets.slice();
+                epaReportCounts = buckets.map(k => map[k]?.count ?? 0);
             } else if (timeframe === 'last_6_months' || timeframe === 'last_year') {
                 // months window
                 const months = timeframe === 'last_6_months' ? 6 : 12;
@@ -510,7 +514,7 @@ export default function Dashboard() {
                 // aggregate by month
                 const map: Record<string, { sum: number; count: number }> = {};
                 sortedProcedures.forEach(p => {
-                    const date = new Date(p.create_date);
+                    const date = new Date(parseDate(p.create_date));
                     const k = monthKey(date);
                     if (!map[k]) map[k] = { sum: 0, count: 0 };
                     const v = Number(p.oepa);
@@ -525,8 +529,8 @@ export default function Dashboard() {
                     return monthLabel(d);
                 });
                 epaData = buckets.map(k => map[k] && map[k].count ? Number((map[k].sum / map[k].count).toFixed(2)) : null);
-                // convert YYYY-MM to YYYY-MM-01 for a valid ISO day timestamp
-                epaTimestamps = buckets.map(k => `${k}-01`);
+                epaTimestamps = buckets.map(k => `${k}-01T00:00:00`);
+                epaReportCounts = buckets.map(k => map[k]?.count ?? 0);
             }
         }
 
@@ -538,6 +542,7 @@ export default function Dashboard() {
             data: epaData,
             spanGaps: true, // allow gaps to be filled for areas missing EPA data
             timestamps: epaTimestamps.map(ts => ts),
+            reportCounts: epaReportCounts,
             borderColor: '#afd5f0',
             backgroundColor: 'rgba(74, 144, 226, 0.1)',
             borderWidth: 3,
@@ -690,7 +695,7 @@ export default function Dashboard() {
             const mapIndex: Record<string, number> = {};
             keys.forEach((k, idx) => mapIndex[k] = idx);
             filtered.forEach(p => {
-                const d = new Date(p.create_date);
+                const d = new Date(parseDate(p.create_date));
                 if (isNaN(d.getTime())) return;
                 const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
                 if (mapIndex[key] !== undefined) counts[mapIndex[key]] += 1;
@@ -710,7 +715,7 @@ export default function Dashboard() {
             const mapIndex: Record<string, number> = {};
             labels.forEach((l, idx) => mapIndex[l] = idx);
             filtered.forEach(p => {
-                const d = new Date(p.create_date);
+                const d = new Date(parseDate(p.create_date));
                 if (isNaN(d.getTime())) return;
                 const key = String(d.getFullYear());
                 if (mapIndex[key] !== undefined) counts[mapIndex[key]] += 1;
@@ -721,7 +726,6 @@ export default function Dashboard() {
 
     // dynamic EPA chart options adjusted based on selected timeframe
     const epaOptions = useMemo(() => {
-        // clone base options to avoid mutating imported config
         const base: any = JSON.parse(JSON.stringify(epaTrendOptions));
         let maxTicksLimit = 12;
         if (timeframe === 'last_month') maxTicksLimit = 10;
@@ -739,7 +743,6 @@ export default function Dashboard() {
                 minRotation: 0,
             }
         };
-
         base.scales.y = {
             ...(base.scales.y || {}),
             afterBuildTicks: (axis: any) => {
@@ -747,14 +750,17 @@ export default function Dashboard() {
             },
         };
         base.interaction = {
-            mode: 'index',       // changed from 'nearest'
-            intersect: false,    // changed from true — enables continuous hover line
+            mode: 'index',
+            intersect: false,
             axis: 'x'
         };
 
-        // For longer time windows, shorten label text where possible by keeping month and day only
-        base.plugins = base.plugins || {};
-        base.plugins.hoverSlopeLine = {};
+        // Re-attach the original plugins including tooltip callbacks (lost in JSON clone)
+        base.plugins = {
+            ...(epaTrendOptions as any).plugins,
+            hoverSlopeLine: {},
+        };
+
         return base as any;
     }, [timeframe]);
 

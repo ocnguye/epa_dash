@@ -130,8 +130,10 @@ export default function TraineePage() {
         });
         if (!valid.length) return null;
 
+        const parseDate = (d: string) => new Date(d.replace('Z', ''));
+
         const sorted = [...valid].sort((a: any, b: any) =>
-            new Date(a.create_date).getTime() - new Date(b.create_date).getTime()
+            parseDate(a.create_date).getTime() - parseDate(b.create_date).getTime()
         );
 
         const fmtDay = (d: Date) => d.toISOString().slice(0, 10);
@@ -139,7 +141,7 @@ export default function TraineePage() {
         const orderedKeys: string[] = [];
 
         sorted.forEach((p: any) => {
-            const k = fmtDay(new Date(p.create_date));
+            const k = fmtDay(parseDate(p.create_date));
             if (!map[k]) {
                 map[k] = { sum: 0, count: 0 };
                 orderedKeys.push(k);
@@ -158,11 +160,14 @@ export default function TraineePage() {
             Number((map[k].sum / map[k].count).toFixed(2))
         );
 
+        const reportCounts = orderedKeys.map(k => map[k].count);
+
         const datasets: any[] = [
             {
                 label: 'EPA Score',
                 data: epaData,
-                timestamps: orderedKeys,
+                timestamps: orderedKeys.map(k => `${k}T00:00:00`),
+                reportCounts,
                 borderColor: '#afd5f0',
                 backgroundColor: 'rgba(74, 144, 226, 0.1)',
                 borderWidth: 3,
@@ -311,13 +316,22 @@ export default function TraineePage() {
                                   <Line
                                       data={epaTrendData as any}
                                       options={{
-                                          ...epaTrendOptions as any,
-                                          interaction: { mode: 'index', intersect: false, axis: 'x' },
-                                          plugins: {
-                                              ...(epaTrendOptions as any).plugins,
-                                              hoverSlopeLine: {},
-                                          },
-                                      }}
+                                        ...epaTrendOptions as any,
+                                        interaction: { mode: 'nearest', intersect: true, axis: 'x' },
+                                        plugins: {
+                                            ...(epaTrendOptions as any).plugins,
+                                            hoverSlopeLine: {},
+                                        },
+                                        scales: {
+                                            ...(epaTrendOptions as any).scales,
+                                            y: {
+                                                ...(epaTrendOptions as any).scales?.y,
+                                                afterBuildTicks: (axis: any) => {
+                                                    axis.ticks = axis.ticks.filter((t: any) => t.value <= 5);
+                                                },
+                                            },
+                                        },
+                                    }}
                                   />
                               </div>
                           ) : (
@@ -416,13 +430,11 @@ export default function TraineePage() {
 
                         {/* Performance Summary */}
                         <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#374151' }}>Performance Summary</div>
+                            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#374151', textAlign: 'center' }}>Performance Summary</div>
                             {stats ? (
                                 <div style={{ color: '#374151', fontSize: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
                                     <div><strong>Average EPA:</strong> {stats.avg_epa ? Number(stats.avg_epa).toFixed(2) : 'N/A'}</div>
                                     <div><strong>Procedures This Month:</strong> {stats.procedures || 0}</div>
-                                    <div><strong>Pending Feedback:</strong> {stats.feedback_requested || 0}</div>
-                                    <div><strong>Feedback Discussed:</strong> {stats.feedback_discussed || 0}</div>
                                 </div>
                             ) : (
                                 <div style={{ color: '#6b7280' }}>No summary available</div>

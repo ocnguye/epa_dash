@@ -278,9 +278,6 @@ export default function KeyPerformanceMetrics({ procedures, loading }: { procedu
                                 borderRadius: 9999,
                                 background: '#f3f4f6',
                                 border: '1px solid #e6e7eb',
-                                padding: 4,
-                                overflow: 'hidden',
-                                // show an outer glow on the wrapper when focused to aid keyboard users
                                 boxShadow: toggleFocusWithin ? '0 6px 18px rgba(59,130,246,0.08)' : undefined
                             }}
                         >
@@ -289,69 +286,31 @@ export default function KeyPerformanceMetrics({ procedures, loading }: { procedu
                                 aria-hidden
                                 style={{
                                     position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    width: '50%',
-                                    height: '100%',
+                                    top: 3,
+                                    bottom: 3,
+                                    ...(viewMode === 'name' ? { left: 3, right: '50%' } : { right: 3, left: '50%' }),
                                     borderRadius: 9999,
-                                    // consistent soft blue fill
                                     background: 'rgba(59,130,246,0.12)',
-                                    border: 'none',
-                                    transition: 'transform 200ms cubic-bezier(.2,.9,.2,1)',
-                                    transform: viewMode === 'name' ? 'translateX(0%)' : 'translateX(100%)',
-                                    // inset ring to define the selected pill area
-                                    boxShadow: 'inset 0 0 0 1px rgba(59,130,246,0.14)'
+                                    boxShadow: 'inset 0 0 0 1px rgba(59,130,246,0.14)',
+                                    transition: 'left 200ms cubic-bezier(.2,.9,.2,1), right 200ms cubic-bezier(.2,.9,.2,1)',
                                 }}
                             />
-                            <div style={{ position: 'relative', display: 'flex', gap: 6, zIndex: 2, height: '100%', alignItems: 'center', paddingLeft: 2 }}>
+                            <div style={{ position: 'relative', display: 'flex', height: '100%', zIndex: 2 }}>
                                 <button
                                     aria-pressed={viewMode === 'name'}
                                     onClick={() => setViewMode('name')}
-                                    style={{
-                                        flex: 1,
-                                        height: '100%',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        padding: '6px 10px',
-                                        borderRadius: 9999,
-                                        border: 'none',
-                                        background: 'transparent',
-                                        cursor: 'pointer',
-                                        fontWeight: 600,
-                                        fontSize: 13,
-                                        color: viewMode === 'name' ? '#0f172a' : '#475569',
-                                        textAlign: 'center'
-                                    }}
-                                    // remove native focus outline so the pill-level focus ring is the only visible indicator
+                                    style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 600, fontSize: 13, color: viewMode === 'name' ? '#0f172a' : '#475569', borderRadius: 9999 }}
                                     onFocus={(e) => e.currentTarget.style.outline = 'none'}
                                     onBlur={(e) => e.currentTarget.style.outline = 'none'}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewMode('name'); } }}
                                 >
                                     Name
                                 </button>
                                 <button
                                     aria-pressed={viewMode === 'code'}
                                     onClick={() => setViewMode('code')}
-                                    style={{
-                                        flex: 1,
-                                        height: '100%',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        padding: '6px 10px',
-                                        borderRadius: 9999,
-                                        border: 'none',
-                                        background: 'transparent',
-                                        cursor: 'pointer',
-                                        fontWeight: 600,
-                                        fontSize: 13,
-                                        color: viewMode === 'code' ? '#0f172a' : '#475569',
-                                        textAlign: 'center'
-                                    }}
+                                    style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 600, fontSize: 13, color: viewMode === 'code' ? '#0f172a' : '#475569', borderRadius: 9999 }}
                                     onFocus={(e) => e.currentTarget.style.outline = 'none'}
                                     onBlur={(e) => e.currentTarget.style.outline = 'none'}
-                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewMode('code'); } }}
                                 >
                                     Code
                                 </button>

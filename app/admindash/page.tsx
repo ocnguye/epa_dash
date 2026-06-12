@@ -224,7 +224,7 @@ export default function AdminDash() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        <button onClick={() => router.push('/adminepa')} style={headerBtnBase}
+                        <button onClick={() => router.push('/attendingepa')} style={headerBtnBase}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 8px rgba(0,0,0,0.08)'; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)'; }}>
                             Attending view

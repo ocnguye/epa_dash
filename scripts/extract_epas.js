@@ -60,13 +60,70 @@ function getRdsConfig() {
   return {host,user,password,database,port,multipleStatements:false};
 }
 
-// ─── EPA extraction from ContentText ─────────────────────────────────────────
+// ─── Name parsing (duplicated from extract_personnel.js) ─────────────────────
 
-// Given a report's ContentText and the list of trainee participant rows
-// already in report_participants for that report, extract EPA scores and
-// match each score to the correct participant.
-//
-// Returns: { scores: [{participantId, score}], unmatched: [{reason, raw, reportId}] }
+function stripPunct(s) { return s ? s.replace(/^\p{P}+|\p{P}+$/gu, '').trim() : ''; }
+
+const REJECT_RE = /^(?:none\.?|n\/a|na|resident|resident\(s\)|trainee|attending|fellow|faculty|note|nr|not\s+present|available|dr\.?|doctor|prof\.?)$/i;
+const SUFFIX_RE = /(?:,\s*|\s+)(?:MD|DO|PhD|RN|PA-C|PA|NP|MBBS|FRCR|FRCPC|MSK\s+Radiology\s+Fellow|Radiology\s+Fellow|Fellow|PGY\s*[\d\/\-]+)\.?(?:\s*,.*)?$/i;
+const PREFIX_RE = /^(?:Dr\.?|Doctor|Prof\.?|Professor|Mr\.?|Mrs\.?|Ms\.?)\s+/i;
+const PAREN_RE  = /\([^)]*\)/g;
+const DISCLAIMER_RE     = /[,.]?\s*(?:not\s+present|but\s+readily|available\s+for|for\s+the\s+procedure|readily\s+available).*/gi;
+const TRAINING_LEVEL_RE = /\b(?:R|PGY)\s*[-/]?\s*\d+\b/gi;
+
+function cleanName(raw) {
+  if (!raw) return null;
+  let n = raw.trim()
+    .replace(/\s+/g, ' ').replace(PAREN_RE, '').replace(DISCLAIMER_RE, '')
+    .replace(SUFFIX_RE, '').replace(PREFIX_RE, '').replace(TRAINING_LEVEL_RE, '')
+    .replace(/[\.\s]+$/g, '').trim();
+  n = stripPunct(n);
+  if (!n || n.length < 2 || /^\d+$/.test(n)) return null;
+  if (REJECT_RE.test(n)) return null;
+  if (/\b(?:not|but|for|the|available|present|procedure)\b/i.test(n)) return null;
+  return n;
+}
+
+function stripCredentials(raw) {
+  return raw
+    .replace(/\bM\.D\.?\b/gi,'MD').replace(/\bD\.O\.?\b/gi,'DO')
+    .replace(/\bP\.H\.D\.?\b/gi,'PhD').replace(/\bR\.N\.?\b/gi,'RN')
+    .replace(/\bP\.A\-C\.?\b/gi,'PA-C').replace(/\bP\.A\.?\b/gi,'PA')
+    .replace(/\bN\.P\.?\b/gi,'NP').replace(/\bM\.B\.B\.S\.?\b/gi,'MBBS')
+    .replace(/\bF\.R\.C\.R\.?\b/gi,'FRCR').replace(/\bF\.R\.C\.P\.C\.?\b/gi,'FRCPC')
+    .replace(/\b(MD|DO|PhD|RN|PA-C|PA|NP|MBBS|FRCR|FRCPC)\b/gi,'')
+    .replace(/\s*[.,]+\s*$/g,'').replace(/\s+/g,' ').trim();
+}
+
+function splitNamesLoose(val, knownLastNames) {
+  if (!val) return [];
+  let s = stripCredentials(val)
+    .replace(/\s*;\s*/g,'|').replace(/\s*\/\s*/g,'|').replace(/\s*&\s*/g,'|')
+    .replace(/\s+and\s+/gi,'|')
+    .replace(/(?<=\b\w{2,})\.\s+(?=[A-Z][a-z])/g,'|')
+    .replace(/,\s+(?=[A-Z][a-z]+)/g, (match, offset, str) => {
+      const before = str.slice(0, offset).split('|').pop().trim();
+      const after  = str.slice(offset + match.length).split(/[|,]/)[0].trim();
+      if (before.split(/\s+/).length === 1 && after.split(/\s+/).length === 1) {
+        if (knownLastNames && knownLastNames.has(after.toLowerCase())) return '|';
+        return ' ';
+      }
+      return '|';
+    });
+  return s.split('|').map(p => p.replace(/[.,]+$/,'').trim()).filter(Boolean);
+}
+
+function splitByKnownNames(val, knownLastNames) {
+  const words = val.split(/\s+/);
+  for (let i = 1; i < words.length-1; i++) {
+    const w = words[i].toLowerCase().replace(/[^a-z]/g,'');
+    if (knownLastNames.has(w) && /^[A-Z]/.test(words[i+1]))
+      return [words.slice(0,i+1).join(' '), words.slice(i+1).join(' ')];
+  }
+  return [val];
+}
+
+// ─── Personnel field parsing ──────────────────────────────────────────────────
 
 function getPersonnelFields(text) {
   if (!text) return [];
@@ -76,7 +133,9 @@ function getPersonnelFields(text) {
   return raw.split(/[ \t]{2,}|\r?\n/).map(s => s.trim()).filter(Boolean);
 }
 
-// Normalise a name for fuzzy comparison: lowercase, strip punctuation/credentials
+// ─── Participant matching ─────────────────────────────────────────────────────
+
+// Normalise a name for fuzzy comparison
 function normName(s) {
   return (s||'').toLowerCase()
     .replace(/\b(dr\.?|doctor|prof\.?|mr\.?|mrs\.?|ms\.?)\s+/gi,'')
@@ -86,22 +145,63 @@ function normName(s) {
     .replace(/\s+/g,' ').trim();
 }
 
-// Score similarity between two normalised name strings
 function nameSimilarity(a, b) {
   if (!a||!b) return 0;
   const aTokens=new Set(a.split(' ')), bTokens=new Set(b.split(' '));
-  // Last-name match is highest signal
   const aLast=a.split(' ').pop(), bLast=b.split(' ').pop();
   let score = aLast===bLast ? 0.6 : 0;
-  // Token overlap
   let overlap=0; for (const t of aTokens) if(bTokens.has(t)) overlap++;
   score += (overlap/Math.max(aTokens.size,bTokens.size))*0.3;
-  // First initial match
   if (a[0]&&b[0]&&a[0]===b[0]) score+=0.1;
   return score;
 }
 
-function extractEpaAssignments(text, participants, reportId) {  // ← add reportId param
+// Match a raw name string to one of the known participants for this report.
+// Uses the same splitting logic as extract_personnel.js so that e.g.
+// "Rodriguez, Chen" is correctly treated as two last-names rather than
+// Last, First before attempting any fuzzy match.
+function matchParticipant(rawName, normParticipants, knownLastNames) {
+  // Split the raw fragment into individual candidate names first
+  const candidates = [];
+  for (const chunk of splitNamesLoose(rawName, knownLastNames)) {
+    for (const name of splitByKnownNames(chunk, knownLastNames)) {
+      const c = cleanName(name);
+      if (c) candidates.push(c);
+    }
+  }
+
+  for (const candidate of candidates) {
+    const n = normName(candidate);
+    if (!n) continue;
+
+    // 1. Exact source_text match
+    const exact = normParticipants.find(p => normName(p.source_text) === n);
+    if (exact) return exact;
+
+    // 2. Participant source_text is contained within candidate
+    //    (e.g. source_text="Chen", candidate="Chen Michael")
+    const partial = normParticipants.find(p => {
+      const st = normName(p.source_text);
+      return st && n.includes(st) && st.length > 2;
+    });
+    if (partial) return partial;
+
+    // 3. Similarity fallback
+    let best=null, bestScore=0;
+    for (const p of normParticipants) {
+      const s = nameSimilarity(n, p.norm);
+      if (s > bestScore) { bestScore=s; best=p; }
+    }
+    if (normParticipants.length === 1) return normParticipants[0];
+    if (bestScore >= 0.5) return best;
+  }
+
+  return null;
+}
+
+// ─── EPA extraction from ContentText ─────────────────────────────────────────
+
+function extractEpaAssignments(text, participants, reportId, knownLastNames) {
   const fields = getPersonnelFields(text);
   const LABEL_RE = /^Resident(?:\(s\))?\s*(?:PGY\s*[\d\/\-]+\s*)?:\s*(.*)/i;
   const EPA_RE   = /\b(?:Trainee\s+)?EPA\s*[:#]?\s*([1-5NR]?(?:\s*[,;\/&]\s*[1-5])*)/gi;
@@ -109,36 +209,19 @@ function extractEpaAssignments(text, participants, reportId) {  // ← add repor
   const scores    = [];
   const unmatched = [];
   let lastWasResident = false;
-  let lastMatchedParticipant = null;  // ← track last successfully matched participant
+  let lastMatchedParticipant = null;
+
+  // Deduplicate scores per participant within this report.
+  // A trainee should never have more than one EPA score per report —
+  // if the same participantId appears twice we warn and keep the first.
+  const seenParticipantIds = new Set();
 
   const normParticipants = participants.map(p => ({
     ...p,
     norm: normName(`${p.user_first||''} ${p.user_last||''} ${p.source_text||''}`)
   }));
 
-  function matchParticipant(rawName) {
-    const n = normName(rawName);
-    if (!n) return null;
-    // 1. Exact source_text match
-    const exact = normParticipants.find(p => normName(p.source_text) === n);
-    if (exact) return exact;
-    // 2. Partial match — handles truncated source_text e.g. "Cheung" matching "Cheung, Stephanie"
-    const partial = normParticipants.find(p => {
-      const st = normName(p.source_text);
-      return st && n.includes(st);
-    });
-    if (partial) return partial;
-    // 3. Similarity fallback
-    let best = null, bestScore = 0;
-    for (const p of normParticipants) {
-      const s = nameSimilarity(n, p.norm);
-      if (s > bestScore) { bestScore = s; best = p; }
-    }
-    if (normParticipants.length === 1) return normParticipants[0];
-    return bestScore >= 0.5 ? best : null;
-  }
-
-  const processField = (content) => {  // ← reportId no longer a param, closes over outer value
+  const processField = (content) => {
     let c = content
       .replace(/\band\s+/gi, '|')
       .replace(/\bTrainee\s*:\s*([1-5]|NR)\b/gi, 'EPA: $1');
@@ -156,14 +239,15 @@ function extractEpaAssignments(text, participants, reportId) {  // ← add repor
 
     for (let i=0; i<anchors.length; i++) {
       const anchor=anchors[i], prevEnd=i===0?0:anchors[i-1].end;
-      let namePart = c.slice(prevEnd, anchor.index).trim().replace(/\s*Trainee\s*$/i,'').trim();
-      namePart = namePart.replace(/\|/g,' ').trim();
+      const namePart = c.slice(prevEnd, anchor.index)
+        .trim()
+        .replace(/\s*Trainee\s*$/i,'')
+        .replace(/\|/g,' ')
+        .trim();
 
-      // If namePart is empty (back-to-back EPA tokens), reuse the last matched
-      // participant rather than emitting a no_participant_match with an empty name
       let participant = null;
       if (namePart) {
-        participant = matchParticipant(namePart);
+        participant = matchParticipant(namePart, normParticipants, knownLastNames);
         if (participant) lastMatchedParticipant = participant;
       } else {
         participant = lastMatchedParticipant;
@@ -178,6 +262,12 @@ function extractEpaAssignments(text, participants, reportId) {  // ← add repor
         unmatched.push({ reason:'no_participant_match', rawName:namePart, reportId, epas:anchor.epas.join('|') });
         continue;
       }
+
+      if (seenParticipantIds.has(participant.id)) {
+        console.warn(`[WARN] Duplicate EPA token for participant ${participant.id} (report ${reportId}, name "${namePart}") — skipping.`);
+        continue;
+      }
+      seenParticipantIds.add(participant.id);
 
       for (const score of anchor.epas) {
         scores.push({ participantId: participant.id, score });
@@ -197,12 +287,12 @@ function extractEpaAssignments(text, participants, reportId) {  // ← add repor
 
     let content = lm[1].trim();
     if (content && !content.match(/EPA/i)) {
-        const next = fields[fi + 1] || '';
-        const nextEpa = next.match(/^(?:Trainee\s+)?EPA\s*[:#]?\s*([1-5NR].*)/i);
-        if (nextEpa) {
-            content = content + '  Trainee EPA: ' + nextEpa[1].trim();
-            fi++;
-        }
+      const next = fields[fi + 1] || '';
+      const nextEpa = next.match(/^(?:Trainee\s+)?EPA\s*[:#]?\s*([1-5NR].*)/i);
+      if (nextEpa) {
+        content = content + '  Trainee EPA: ' + nextEpa[1].trim();
+        fi++;
+      }
     }
 
     if (content) processField(content);
@@ -214,7 +304,6 @@ function extractEpaAssignments(text, participants, reportId) {  // ← add repor
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 
 async function fetchReportsWithParticipants(conn, limit, reportId) {
-  // Fetch trainee participants joined to user names and their report's ContentText
   let where = `rp.role = 'trainee'`;
   const params = [];
   if (reportId) { where += ' AND rp.report_id = ?'; params.push(reportId); }
@@ -236,7 +325,6 @@ async function fetchReportsWithParticipants(conn, limit, reportId) {
   `;
 
   if (!reportId && limit > 0) {
-    // Limit by number of distinct reports, not rows
     sql = `
       SELECT
         rp.id            AS participantId,
@@ -260,7 +348,6 @@ async function fetchReportsWithParticipants(conn, limit, reportId) {
 
   const [rows] = await conn.execute(sql, params);
 
-  // Group by reportId
   const byReport = new Map();
   for (const row of rows) {
     if (!byReport.has(row.reportId)) {
@@ -277,6 +364,13 @@ async function fetchReportsWithParticipants(conn, limit, reportId) {
   return byReport;
 }
 
+async function buildLastNames(conn) {
+  const [users] = await conn.execute(
+    'SELECT last_name FROM users WHERE last_name IS NOT NULL'
+  );
+  return new Set(users.map(u => u.last_name.trim().toLowerCase()));
+}
+
 // ─── DB writes ────────────────────────────────────────────────────────────────
 
 async function writeScore(conn, participantId, score, force) {
@@ -284,7 +378,8 @@ async function writeScore(conn, participantId, score, force) {
     await conn.execute(
       `INSERT INTO epa_scores (report_participant_id, epa_score)
        VALUES (${Number(participantId)}, ${Number(score)})
-       ON DUPLICATE KEY UPDATE epa_score=VALUES(epa_score)`
+       ON DUPLICATE KEY UPDATE
+         epa_score = IF(epa_score <=> VALUES(epa_score), epa_score, VALUES(epa_score))`
     );
     return 'written';
   }
@@ -318,15 +413,46 @@ async function main() {
   catch(e) { console.error('[FATAL]',e.message); process.exit(1); }
 
   console.log('[INFO] Fetching trainee participants and report text…');
-  const byReport = await fetchReportsWithParticipants(conn, argv['report-id']?0:argv.limit, argv['report-id']);
-  console.log(`[INFO] Processing ${byReport.size} report(s)…`);
+  const [byReport, knownLastNames] = await Promise.all([
+    fetchReportsWithParticipants(conn, argv['report-id']?0:argv.limit, argv['report-id']),
+    buildLastNames(conn),
+  ]);
+  console.log(`[INFO] Processing ${byReport.size} report(s) with ${knownLastNames.size} known last names…`);
 
   const allScores=[], allUnmatched=[];
 
   for (const [reportId, {ContentText, participants}] of byReport) {
-    const {scores, unmatched} = extractEpaAssignments(ContentText, participants, reportId);
+    const {scores, unmatched} = extractEpaAssignments(ContentText, participants, reportId, knownLastNames);
     for (const s of scores)    allScores.push({reportId, ...s});
     for (const u of unmatched) allUnmatched.push({...u});
+  }
+
+  function printSummary(allScores, allUnmatched, byReport, knownLastNames, writeStats) {
+    const totalScores            = allScores.length;
+    const unmatchedNoScore       = allUnmatched.filter(u=>u.reason==='no_score').length;
+    const unmatchedNoParticipant = allUnmatched.filter(u=>u.reason==='no_participant_match').length;
+    const totalAttempted         = totalScores + unmatchedNoParticipant;
+    const pct = (n,d) => d ? `${((n/d)*100).toFixed(1)}%` : 'n/a';
+    const W=72, LINE='═'.repeat(W), DASH='─'.repeat(W);
+    const row=(l,v)=>console.log(`  ${l.padEnd(38)} : ${v}`);
+    console.log('\n'+LINE); console.log('  EPA EXTRACTION SUMMARY'); console.log(LINE);
+    row('Reports processed',         byReport.size);
+    row('Known last names loaded',   knownLastNames.size);
+    console.log(DASH);
+    row('Total EPA slots found',     totalAttempted);
+    row('  Assigned to participant', `${totalScores}  (${pct(totalScores, totalAttempted)})`);
+    row('  No participant match',    `${unmatchedNoParticipant}  (${pct(unmatchedNoParticipant, totalAttempted)})`);
+    console.log(DASH);
+    row('Total scores assigned',     totalScores);
+    if (writeStats) {
+      row('  Written to DB',         `${writeStats.written}  (${pct(writeStats.written, totalScores)})`);
+      row('  Already existed',       `${writeStats.skipped}  (${pct(writeStats.skipped, totalScores)})`);
+    } else {
+      row('  Would be written',      `${totalScores}  (dry-run)`);
+    }
+    row('  NR / missing score',      unmatchedNoScore);
+    if (writeStats?.errors) { console.log(DASH); row('Errors', writeStats.errors); }
+    console.log(LINE+'\n');
   }
 
   // ── Dry-run ────────────────────────────────────────────────────────────────
@@ -335,11 +461,13 @@ async function main() {
     console.log('  DRY-RUN — EPA score assignments'); console.log('═'.repeat(72));
     for (const s of allScores)
       console.log(`  report=${s.reportId}  participant=${s.participantId}  score=${s.score}`);
-    console.log('\n  Unmatched:');
-    for (const u of allUnmatched)
-      console.log(`  report=${u.reportId}  reason=${u.reason}  name="${u.rawName||''}"  epas=${u.epas||''}`);
-    console.log('\n'+`  Would write: ${allScores.length} scores  |  Unmatched: ${allUnmatched.length}`);
-    console.log('═'.repeat(72)+'\n');
+    if (allUnmatched.length) {
+      console.log('\n  Unmatched:');
+      for (const u of allUnmatched)
+        console.log(`  report=${u.reportId}  reason=${u.reason}  name="${u.rawName||''}"  epas=${u.epas||''}`);
+    }
+    printSummary(allScores, allUnmatched, byReport, knownLastNames, null);
+    console.log('  No data was written. Run with --write to commit.\n');
     await conn.end(); return;
   }
 
@@ -363,23 +491,19 @@ async function main() {
   await conn.end();
   console.log('');
 
-  const W=72, LINE='═'.repeat(W), DASH='─'.repeat(W);
-  const row=(l,v)=>console.log(`  ${l.padEnd(38)} : ${v}`);
-  console.log('\n'+LINE); console.log('  EPA EXTRACTION SUMMARY'); console.log(LINE);
-  row('Reports processed',    byReport.size);
-  row('EPA scores written',   written);
-  row('Already existed',      skipped);
-  row('Unmatched (no score)', allUnmatched.length);
-  if (errors) row('Errors', errors);
-  console.log(LINE+'\n');
+  printSummary(allScores, allUnmatched, byReport, knownLastNames, {written, skipped, errors});
 
-  writeCSV(path.join(OUTPUT_DIR,'unmatched_epas.csv'),
+
+  const unmatchedFile = 'unmatched_epas.csv';
+  writeCSV(path.join(OUTPUT_DIR, unmatchedFile),
     allUnmatched.map(u=>({reportId:u.reportId,participantId:u.participantId||'',reason:u.reason,rawName:u.rawName||'',epas:u.epas||''})),
     ['reportId','participantId','reason','rawName','epas']
   );
-  console.log(`[INFO] unmatched_epas.csv: ${allUnmatched.length} rows`);
+  console.log(`[INFO] ${unmatchedFile}: ${allUnmatched.length} rows`);
+  console.log(`[INFO]   no_participant_match : ${unmatchedNoParticipant}`);
+  console.log(`[INFO]   no_score (NR/blank)  : ${unmatchedNoScore}`);
   if (allUnmatched.length)
-    console.log(`[INFO] Next: node scripts/manual_resolve_epa.js --input output/unmatched_epas.csv`);
+    console.log(`[INFO] Next: node scripts/manual_resolve_epa.js --input output/${unmatchedFile}`);
 }
 
 if (require.main===module) main().catch(err=>{console.error('\n[FATAL]',err.message);process.exit(1);});

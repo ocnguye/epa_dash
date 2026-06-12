@@ -183,11 +183,12 @@ function splitByKnownNames(val, knownLastNames) {
   return [val];
 }
 
-function extractTrainees(text, knownLastNames) {  // ← add param
+function extractTrainees(text, knownLastNames) {
   const fields = getPersonnelFields(text), results = [];
   const LABEL_RE = /^Resident(?:\(s\))?\s*(?:PGY\s*[\d\/\-]+\s*)?:\s*(.*)/i;
   let lastWasResident = false;
-  for (const field of fields) {
+  for (let fi = 0; fi < fields.length; fi++) {
+    const field = fields[fi];
     const andCont = field.match(/^and\s+(.+)/i);
     if (andCont && lastWasResident) {
       for (const {name,epas} of parseNameEpaPairs(andCont[1].trim(), knownLastNames)) {
@@ -200,7 +201,17 @@ function extractTrainees(text, knownLastNames) {  // ← add param
     const lm = field.match(LABEL_RE);
     if (!lm) { lastWasResident=false; continue; }
     lastWasResident = true;
-    const content = lm[1].trim(); if (!content) continue;
+    let content = lm[1].trim(); if (!content) continue;
+
+    if (!content.match(/EPA/i)) {
+      const next = fields[fi + 1] || '';
+      const nextEpa = next.match(/^(?:Trainee\s+)?EPA\s*[:#]?\s*([1-5NR].*)/i);
+      if (nextEpa) {
+        content = content + '  Trainee EPA: ' + nextEpa[1].trim();
+        fi++;
+      }
+    }
+
     for (const {name,epas} of parseNameEpaPairs(content, knownLastNames)) {
       const c = cleanName(name); if (!c) continue;
       const ex = results.find(r=>r.name===c);
@@ -370,7 +381,7 @@ async function fetchReports(conn, limit, reportId) {
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
 function computeStats(enriched, cache) {
-  let reportsWithPersonnel=0,reportsWithAttending=0,reportsWithTrainee=0,reportsWithEpa=0;
+  let reportsWithPersonnel=0,reportsWithAttending=0,reportsWithTrainee=0,reportsWithEpa=0,resolvedEpas=0;
   let totalAttending=0,totalTrainees=0,totalEpas=0,resolvedAttending=0,resolvedTrainees=0;
   const unresolved=[], dbKeysSeen=new Set();
   for (const r of enriched) {
@@ -388,12 +399,17 @@ function computeStats(enriched, cache) {
     for (const {name,epas} of r.trainees) {
       totalTrainees++; totalEpas+=epas.length;
       const uid=resolveUserId(name,cache,'trainee');
-      if (uid!==null) { const k=`${r.ReportID}|${uid}|trainee`; if(!dbKeysSeen.has(k)){dbKeysSeen.add(k);resolvedTrainees++;} }
+      if (uid!==null) {
+        const k=`${r.ReportID}|${uid}|trainee`;
+        if(!dbKeysSeen.has(k)){dbKeysSeen.add(k);resolvedTrainees++;}
+        resolvedEpas+=epas.length;   // ← add this
+      }
       else unresolved.push({ReportID:r.ReportID,role:'trainee',name});
     }
   }
   return {reportsWithPersonnel,reportsWithAttending,reportsWithTrainee,reportsWithEpa,
-          totalAttending,totalTrainees,totalEpas,resolvedAttending,resolvedTrainees,unresolved};
+          totalAttending,totalTrainees,totalEpas,resolvedAttending,resolvedTrainees,unresolved,
+          totalEpas, resolvedEpas, unresolved};
 }
 
 function printSummary(enriched, cache, writeStats) {
@@ -423,7 +439,9 @@ function printSummary(enriched, cache, writeStats) {
   row('Total trainee slots',s.totalTrainees);
   row('  Resolved to user_id',`${s.resolvedTrainees}  (${pct(s.resolvedTrainees,s.totalTrainees)})`);
   row('  Unresolved (skipped)',s.totalTrainees-s.resolvedTrainees);
-  row('Total EPA tokens found',s.totalEpas);
+  row('Total EPA slots',s.totalEpas);
+  row('  Resolved (trainee matched)',`${s.resolvedEpas}  (${pct(s.resolvedEpas,s.totalEpas)})`);
+  row('  Unresolved (trainee unmatched)',s.totalEpas-s.resolvedEpas);
   if (writeStats) {
     console.log(DASH);
     row('Participant rows written',writeStats.totalParticipants);

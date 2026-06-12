@@ -2,15 +2,16 @@
 /**
  * scripts/manual_resolve_epa.js
  *
- * Interactive CLI to manually assign EPA scores from unmatched_epas.csv.
+ * Interactive CLI to manually assign EPA scores from unmatched_epa_scores.csv.
  * Handles two cases:
- *   1. reason=no_participant_match  — score was found but no trainee participant
- *      row matched the name. Lets you pick the correct participant by report.
- *   2. reason=no_score             — participant is known but EPA label was NR
- *      or missing. Lets you enter the score manually.
+ *   1. reason=no_score             — participant is known but EPA label was NR
+ *      or missing. Skipped automatically.
+ *   2. reason=no_participant_match — score was found but no trainee participant
+ *      row matched the name. Shows trainees assigned to that report and lets
+ *      you pick one to assign the score to, or skip if it doesn't belong.
  *
  * Usage:
- *   node scripts/manual_resolve_epa.js output/unmatched_epas.csv
+ *   node scripts/manual_resolve_epa.js output/unmatched_epa_scores.csv
  */
 
 'use strict';
@@ -35,24 +36,24 @@ function getRdsConfig() {
 }
 
 function loadCSV(filePath) {
-  const raw = fs.readFileSync(filePath,'utf8').split('\n').map(l=>l.trim()).filter(Boolean);
+  const raw = fs.readFileSync(filePath, 'utf8').split('\n').map(l => l.trim()).filter(Boolean);
   const headers = raw[0].split(',');
   return raw.slice(1).map(line => {
-    const cols=[]; let cur='',inQ=false;
+    const cols = []; let cur = '', inQ = false;
     for (const ch of line) {
-      if (ch==='"'){inQ=!inQ;}
-      else if (ch===','&&!inQ){cols.push(cur);cur='';}
-      else cur+=ch;
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === ',' && !inQ) { cols.push(cur); cur = ''; }
+      else cur += ch;
     }
     cols.push(cur);
-    const obj={}; headers.forEach((h,i)=>obj[h.trim()]=(cols[i]||'').trim());
+    const obj = {}; headers.forEach((h, i) => obj[h.trim()] = (cols[i] || '').trim());
     return obj;
   });
 }
 
 function ask(query) {
-  const rl=readline.createInterface({input:process.stdin,output:process.stdout});
-  return new Promise(resolve=>rl.question(query,ans=>{rl.close();resolve(ans.trim());}));
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => rl.question(query, ans => { rl.close(); resolve(ans.trim()); }));
 }
 
 async function getTraineesForReport(conn, reportId) {
@@ -60,7 +61,8 @@ async function getTraineesForReport(conn, reportId) {
     `SELECT rp.id, rp.source_text, u.first_name, u.last_name
      FROM report_participants rp
      LEFT JOIN users u ON u.user_id = rp.user_id
-     WHERE rp.report_id = ? AND rp.role = 'trainee'`,
+     WHERE rp.report_id = ? AND rp.role = 'trainee'
+     ORDER BY u.last_name, u.first_name`,
     [reportId]
   );
   return rows;
@@ -68,108 +70,132 @@ async function getTraineesForReport(conn, reportId) {
 
 async function scoreExists(conn, participantId, score) {
   const [rows] = await conn.execute(
-    `SELECT id FROM epa_scores WHERE report_participant_id=${Number(participantId)} AND epa_score=${Number(score)}`
+    `SELECT id FROM epa_scores
+     WHERE report_participant_id = ${Number(participantId)}
+       AND epa_score = ${Number(score)}`
   );
   return rows.length > 0;
 }
 
 async function writeScore(conn, participantId, score) {
-  const exists = await scoreExists(conn, participantId, score);
-  if (exists) return false;
+  if (await scoreExists(conn, participantId, score)) return false;
   await conn.execute(
-    `INSERT INTO epa_scores (report_participant_id, epa_score) VALUES (${Number(participantId)}, ${Number(score)})`
+    `INSERT INTO epa_scores (report_participant_id, epa_score)
+     VALUES (${Number(participantId)}, ${Number(score)})`
   );
   return true;
 }
 
 async function main() {
-    const argv = yargs(hideBin(process.argv))
-        .usage('Usage: $0 <input>')
-        .check(argv => {
-        if (!argv._[0]) throw new Error('Missing required argument: <input>');
-        return true;
-        })
-        .argv;
+  const argv = yargs(hideBin(process.argv))
+    .usage('Usage: $0 <input>')
+    .check(argv => {
+      if (!argv._[0]) throw new Error('Missing required argument: <input>');
+      return true;
+    })
+    .argv;
 
-    const inputPath = path.resolve(argv._[0]);
-    const conn = await mysql.createConnection(getRdsConfig());
-    const rows = loadCSV(inputPath);
-    console.log(`\nLoaded ${rows.length} unmatched EPA entries from ${inputPath}\n`);
+  const inputPath = path.resolve(argv._[0]);
+  const conn      = await mysql.createConnection(getRdsConfig());
+  const rows      = loadCSV(inputPath);
 
-  let written=0, skipped=0, alreadyExists=0;
+  const noScore     = rows.filter(r => r.reason === 'no_score');
+  const noMatch     = rows.filter(r => r.reason === 'no_participant_match');
+  const unrecognised = rows.filter(r => r.reason !== 'no_score' && r.reason !== 'no_participant_match');
 
-  for (const row of rows) {
-    const {reportId, participantId, reason, rawName, epas} = row;
+  console.log(`\nLoaded ${rows.length} unmatched EPA entries from ${path.basename(inputPath)}`);
+  console.log(`  no_score             : ${noScore.length}  (auto-skipped)`);
+  console.log(`  no_participant_match : ${noMatch.length}  (need manual assignment)`);
+  if (unrecognised.length) console.log(`  unrecognised reason  : ${unrecognised.length}  (auto-skipped)`);
 
-    console.log('\n'+'─'.repeat(60));
-    console.log(`Report: ${reportId}  Reason: ${reason}`);
-    if (rawName) console.log(`Extracted name: "${rawName}"`);
-    if (epas)    console.log(`Extracted scores: ${epas}`);
+  if (!noMatch.length) {
+    console.log('\nNothing to resolve. Exiting.\n');
+    await conn.end(); return;
+  }
 
-    // ── Case 1: no_score — participant known, score missing ─────────────────
-    if (reason === 'no_score' && participantId) {
-      const [pRows] = await conn.execute(
-        `SELECT rp.id, rp.source_text, u.first_name, u.last_name
-         FROM report_participants rp LEFT JOIN users u ON u.user_id=rp.user_id
-         WHERE rp.id=?`, [participantId]
-      );
-      const p = pRows[0];
-      if (p) console.log(`Participant: ${p.first_name||''} ${p.last_name||''} (source: "${p.source_text}", id=${participantId})`);
+  console.log('\nFor each entry you will see the extracted name and scores, then a');
+  console.log('list of trainees assigned to that report. Enter the number of the');
+  console.log('correct trainee, or [s] to skip if the score does not belong to any of them.\n');
 
-      const ans = await ask('  Enter EPA score (1-5), [s] skip, [q] quit: ');
-      if (ans==='q') break;
-      if (ans==='s') { skipped++; continue; }
-      const score = Number(ans);
-      if (isNaN(score)||score<1||score>5) { console.log('  Invalid score.'); skipped++; continue; }
-      const ok = await writeScore(conn, Number(participantId), score);
-      if (ok) { written++; console.log(`  → Written score ${score} for participant ${participantId}`); }
-      else { alreadyExists++; console.log('  → Already exists, skipped.'); }
+  let written = 0, alreadyExists = 0, skipped = 0;
+
+  for (let i = 0; i < noMatch.length; i++) {
+    const { reportId, rawName, epas } = noMatch[i];
+    const epaList = (epas || '').split('|').map(Number).filter(n => !isNaN(n) && n >= 1 && n <= 5);
+
+    console.log('─'.repeat(60));
+    console.log(`[${i + 1}/${noMatch.length}]  Report: ${reportId}`);
+    console.log(`  Extracted name   : "${rawName || '(none)'}"`);
+    console.log(`  Extracted scores : ${epaList.length ? epaList.join(', ') : '(none)'}`);
+
+    if (!epaList.length) {
+      console.log('  No valid scores to assign — skipping.\n');
+      skipped++;
       continue;
     }
 
-    // ── Case 2: no_participant_match — score found but name didn't match ─────
-    if (reason === 'no_participant_match') {
-      const epaList = (epas||'').split('|').map(Number).filter(n=>!isNaN(n)&&n>=1&&n<=5);
-      if (!epaList.length) { console.log('  No valid scores to assign.'); skipped++; continue; }
+    const trainees = await getTraineesForReport(conn, reportId);
 
-      const trainees = await getTraineesForReport(conn, reportId);
-      if (!trainees.length) {
-        console.log('  No trainee participants found for this report — skipping.');
-        skipped++; continue;
-      }
-
-      trainees.forEach((t,i)=>
-        console.log(`  [${i}] ${t.first_name||'?'} ${t.last_name||'?'}  source="${t.source_text}"  id=${t.id}`)
-      );
-      console.log('  [s] skip  [q] quit');
-
-      const choice = await ask(`  Assign scores [${epaList.join(',')}] to which participant? `);
-      if (choice==='q') break;
-      if (choice==='s') { skipped++; continue; }
-      const idx = Number(choice);
-      if (isNaN(idx)||!trainees[idx]) { console.log('  Invalid.'); skipped++; continue; }
-      const pid = trainees[idx].id;
-      for (const score of epaList) {
-        const ok = await writeScore(conn, pid, score);
-        if (ok) { written++; console.log(`  → Written score ${score} for participant ${pid}`); }
-        else { alreadyExists++; console.log(`  → Score ${score} already exists.`); }
-      }
+    if (!trainees.length) {
+      console.log('  No trainee participants found for this report — skipping.\n');
+      skipped++;
       continue;
     }
 
-    console.log('  Unrecognised reason, skipping.');
-    skipped++;
+    console.log('\n  Trainees on this report:');
+    trainees.forEach((t, idx) =>
+      console.log(`    [${idx}] ${(t.first_name || '?')} ${(t.last_name || '?')}  (source: "${t.source_text}"  id: ${t.id})`)
+    );
+    console.log('    [s] skip — score does not belong to any of these trainees');
+    console.log('    [q] quit\n');
+
+    const choice = await ask(`  Assign score(s) [${epaList.join(', ')}] to which trainee? `);
+
+    if (choice === 'q') {
+      console.log('\nQuitting early.\n');
+      break;
+    }
+
+    if (choice === 's') {
+      console.log('  Skipped.\n');
+      skipped++;
+      continue;
+    }
+
+    const idx = Number(choice);
+    if (isNaN(idx) || !trainees[idx]) {
+      console.log('  Invalid selection — skipping.\n');
+      skipped++;
+      continue;
+    }
+
+    const pid = trainees[idx].id;
+    const name = `${trainees[idx].first_name || '?'} ${trainees[idx].last_name || '?'}`;
+    for (const score of epaList) {
+      const ok = await writeScore(conn, pid, score);
+      if (ok) {
+        written++;
+        console.log(`  → Written  score ${score}  →  ${name} (id: ${pid})`);
+      } else {
+        alreadyExists++;
+        console.log(`  → Score ${score} already exists for ${name} — skipped.`);
+      }
+    }
+    console.log('');
   }
 
   await conn.end();
 
-  console.log('\n'+'═'.repeat(60));
+  const W = 60;
+  console.log('═'.repeat(W));
   console.log('  MANUAL EPA RESOLVE COMPLETE');
-  console.log('─'.repeat(60));
-  console.log(`  Scores written        : ${written}`);
-  console.log(`  Already existed       : ${alreadyExists}`);
-  console.log(`  Skipped               : ${skipped}`);
-  console.log('═'.repeat(60)+'\n');
+  console.log('─'.repeat(W));
+  console.log(`  Entries reviewed     : ${noMatch.length}`);
+  console.log(`  Scores written       : ${written}`);
+  console.log(`  Already existed      : ${alreadyExists}`);
+  console.log(`  Skipped              : ${skipped}`);
+  console.log(`  Auto-skipped (no_score) : ${noScore.length}`);
+  console.log('═'.repeat(W) + '\n');
 }
 
-main().catch(e=>{console.error('[FATAL]',e.message);process.exit(1);});
+main().catch(e => { console.error('[FATAL]', e.message); process.exit(1); });

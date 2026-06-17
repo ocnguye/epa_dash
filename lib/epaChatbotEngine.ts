@@ -1,3 +1,4 @@
+// epaChatbotEngine.ts
 // Pure matching / aggregation logic — no React, no fetch. Easy to unit test.
 
 export interface TraineeListItem {
@@ -48,7 +49,8 @@ export interface CohortProcedureItem {
   desc: string;
   code: string;
   avg_epa: number;
-  count: number;
+  count: number;       // scored cases (contributes to avg_epa)
+  totalCount: number;  // all cases for this procedure, scored or not
 }
 
 // ---------------- text utils ----------------
@@ -315,6 +317,19 @@ export function resolveTrainee(query: string, trainees: TraineeListItem[]): Trai
 // ---------------- generic phrase matching (no alias table) ----------------
 // Used for: (a) the cohort endpoint, which has no server-side `q` support, and
 // (b) anywhere else we need a quick client-side relevance check.
+//
+// Kept deliberately strict: punctuation-split remnants (the lone "i"/"d" from
+// "I&D", "t"/"a" from "T&A", etc.) carry no real signal on their own, and a
+// short or garbled query should never "match" just because it happens to be
+// a substring of some unrelated longer word. Checks are word-boundary
+// respecting throughout, rather than raw substring matching on the joined
+// string.
+
+const MIN_SIGNAL_TOKEN_LEN = 2;
+
+function meaningfulTokens(tokens: string[]): string[] {
+  return tokens.filter(t => t.length >= MIN_SIGNAL_TOKEN_LEN);
+}
 
 function jaccard(a: string[], b: string[]): number {
   const setA = new Set(a), setB = new Set(b);
@@ -324,22 +339,50 @@ function jaccard(a: string[], b: string[]): number {
   return intersect / (setA.size + setB.size - intersect);
 }
 
-// handles short shorthand like "g" matching "gastrostomy" by prefix
+// Does the (possibly multi-word) phrase appear as a contiguous,
+// word-boundary-respecting run within the haystack tokens? This replaces a
+// raw substring check on the joined string, which would let a short phrase
+// "match" just by appearing inside an unrelated word (e.g. "a" inside
+// "gastrostomy").
+function containsPhraseTokens(haystackTokens: string[], phraseTokens: string[]): boolean {
+  if (phraseTokens.length === 0 || phraseTokens.length > haystackTokens.length) return false;
+  for (let i = 0; i + phraseTokens.length <= haystackTokens.length; i++) {
+    if (phraseTokens.every((pt, j) => haystackTokens[i + j] === pt)) return true;
+  }
+  return false;
+}
+
+// Handles short shorthand like "g" matching "gastrostomy" by prefix, and
+// genuine partial-word overlap like "thrombect" matching "thrombectomy".
+// Only ever checked against meaningful (non-fragment) haystack tokens, so a
+// stray single-character remnant can't be used as the matched substring.
 function matchesInitialism(queryTokens: string[], textTokens: string[]): boolean {
+  const signalTokens = meaningfulTokens(textTokens);
+  if (signalTokens.length === 0) return false;
+
+  // A single-character token (e.g. "g" in "g tube") carries real signal as a
+  // leading-letter abbreviation only when it's paired with at least one
+  // substantial word elsewhere in the query. That anchor is what keeps a
+  // stray single-letter fragment — like the "i"/"d" left over from
+  // splitting "I&D" — from matching almost anything on its own.
+  const hasAnchorWord = queryTokens.some(t => t.length >= 4);
+
   return queryTokens.every(qt => {
-    if (qt.length >= 4) return textTokens.some(tt => tt.includes(qt) || qt.includes(tt));
-    return textTokens.some(tt => tt.startsWith(qt));
+    if (qt.length === 1) return hasAnchorWord && signalTokens.some(tt => tt.startsWith(qt));
+    if (qt.length >= 4) return signalTokens.some(tt => tt.includes(qt) || qt.includes(tt));
+    return signalTokens.some(tt => tt.startsWith(qt)); // length 2-3
   });
 }
 
 export function recordMatchesPhrase(haystack: string, phrase: string): boolean {
-  const h = normalize(haystack);
   const p = normalize(phrase);
   if (!p) return false;
-  if (h.includes(p)) return true;
 
   const ht = tokenize(haystack), pt = tokenize(phrase);
-  if (jaccard(ht, pt) >= 0.5) return true;
+  if (pt.length === 0) return false;
+
+  if (containsPhraseTokens(ht, pt)) return true;
+  if (jaccard(meaningfulTokens(ht), meaningfulTokens(pt)) >= 0.5) return true;
   return matchesInitialism(pt, ht);
 }
 
@@ -374,12 +417,64 @@ export function pickMatchSet(records: ProcedureRecord[]): { matched: ProcedureRe
     : { matched: contentOnlyMatches, source: 'dictation' };
 }
 
+// ---------------- procedure grouping & display labels ----------------
+// Rather than echoing the attending's literal search text back as "the
+// procedure," derive the label from what was actually found — the real
+// proc_desc/proc_code values on the matched records (or cohort rows),
+// weighted by how often each one occurs. allGroups carries every distinct
+// group (sorted by frequency), so the UI can offer a full expandable list
+// rather than a fixed-size "includes X, Y, …" note. Doubles as a strictness
+// check: if nothing in the matched set has a usable description/code at
+// all, there's nothing real to summarize.
+
+export interface ProcedureGroupSummary {
+  label: string;                                  // most common matched description/code — the display label
+  groupCount: number;                              // number of distinct procedure descriptions represented
+  allGroups: { label: string; count: number }[];   // every distinct group, sorted by frequency desc
+}
+
+function buildGroupSummary(weighted: { display: string; weight: number }[]): ProcedureGroupSummary | null {
+  const byKey = new Map<string, { display: string; weight: number }>();
+  for (const { display, weight } of weighted) {
+    const key = display.trim().toLowerCase();
+    if (!key) continue;
+    const entry = byKey.get(key) ?? { display: display.trim(), weight: 0 };
+    entry.weight += weight;
+    byKey.set(key, entry);
+  }
+  const groups = Array.from(byKey.values()).sort((a, b) => b.weight - a.weight);
+  if (groups.length === 0) return null;
+  return {
+    label: groups[0].display,
+    groupCount: groups.length,
+    allGroups: groups.map(g => ({ label: g.display, count: g.weight })),
+  };
+}
+
+export function summarizeProcedureGroups(records: ProcedureRecord[]): ProcedureGroupSummary | null {
+  return buildGroupSummary(
+    records.map(r => ({ display: (r.proc_desc || r.proc_code || '').trim(), weight: 1 }))
+  );
+}
+
+export function summarizeCohortGroups(items: CohortProcedureItem[]): ProcedureGroupSummary | null {
+  return buildGroupSummary(
+    items.map(i => ({ display: (i.desc || i.code || '').trim(), weight: i.totalCount }))
+  );
+}
+
 // ---------------- pgy detection ----------------
 
 export function extractPgyFilter(query: string): { pgy: number | null; remainder: string } {
   const m = query.match(/pgy\s*-?\s*(\d)/i) || query.match(/\b(?:year|yr)\s*(\d)\b/i);
   if (!m) return { pgy: null, remainder: query };
-  return { pgy: Number(m[1]), remainder: query.replace(m[0], ' ') };
+  const remainder = query
+    .replace(m[0], ' ')
+    .replace(/^[\s,]+/, '')   // drop leading comma/space left by the removed match
+    .replace(/[\s,]+$/, '')   // drop trailing comma/space, just in case
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { pgy: Number(m[1]), remainder };
 }
 
 // ---------------- aggregation ----------------
@@ -440,10 +535,31 @@ export function topProcedureBreakdown(records: ProcedureRecord[], topN = 5) {
     .slice(0, topN);
 }
 
-export function aggregateCohort(items: CohortProcedureItem[]): { avg: number; count: number } | null {
-  const totalCount = items.reduce((s, i) => s + i.count, 0);
-  if (!totalCount) return null;
-  return { avg: Number((items.reduce((s, i) => s + i.avg_epa * i.count, 0) / totalCount).toFixed(2)), count: totalCount };
+export function aggregateCohort(items: CohortProcedureItem[]): { avg: number | null; count: number; totalCount: number } | null {
+  const totalCount = items.reduce((s, i) => s + i.totalCount, 0);
+  if (!totalCount) return null; // nothing matched at all, scored or not
+  const count = items.reduce((s, i) => s + i.count, 0);
+  const avg = count > 0
+    ? Number((items.reduce((s, i) => s + i.avg_epa * i.count, 0) / count).toFixed(2))
+    : null;
+  return { avg, count, totalCount };
+}
+
+export function topCohortProcedureBreakdown(items: CohortProcedureItem[], topN = 5) {
+  const map = new Map<string, { label: string; totalCount: number; sum: number; scoredCount: number }>();
+  for (const i of items) {
+    const label = (i.desc || i.code || 'Unknown').trim();
+    const key = label.toLowerCase();
+    const entry = map.get(key) ?? { label, totalCount: 0, sum: 0, scoredCount: 0 };
+    entry.totalCount += i.totalCount;
+    entry.sum += i.avg_epa * i.count;
+    entry.scoredCount += i.count;
+    map.set(key, entry);
+  }
+  return Array.from(map.values())
+    .map(e => ({ label: e.label, count: e.totalCount, avg: e.scoredCount ? Number((e.sum / e.scoredCount).toFixed(2)) : null }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, topN);
 }
 
 export { displayName };

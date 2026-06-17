@@ -558,12 +558,7 @@ export default function AttendingPage() {
             </div>
             
             {/* Chatbot component at the bottom of the page */}
-            <div style={{ minHeight: '100vh', width: '100%', /* ...existing styles... */ }}>
-                <div style={{ maxWidth: 'calc(100vw - 40px)', margin: '0 auto' }}>
-                    {/* ...all your existing header / filters / modal / chart / table markup... */}
-                </div>
-                <Chatbot />
-            </div>
+            <Chatbot />
         </div>
     );   
 }

@@ -59,28 +59,31 @@ export async function GET(req: NextRequest) {
         await connection.end();
 
         // Aggregate per procedure — same logic as the component's useMemo
-        const statsMap: Record<string, { desc: string; code: string; sum: number; count: number }> = {};
+        const statsMap: Record<string, { desc: string; code: string; sum: number; count: number; totalCount: number }> = {};
 
         for (const row of rows) {
-            const oepa = Number(row.oepa);
-            if (!Number.isFinite(oepa) || oepa <= 0) continue; // skip rows with no EPA score
-
             const desc = row.proc_desc ? String(row.proc_desc).trim() : '';
             const code = row.proc_code ? String(row.proc_code).trim() : '';
             const key = desc || code || 'Unknown';
 
             if (!statsMap[key]) {
-                statsMap[key] = { desc: desc || code || 'Unknown', code, sum: 0, count: 0 };
+                statsMap[key] = { desc: desc || code || 'Unknown', code, sum: 0, count: 0, totalCount: 0 };
             }
-            statsMap[key].sum += oepa;
-            statsMap[key].count += 1;
+            statsMap[key].totalCount += 1;
+
+            const oepa = Number(row.oepa);
+            if (Number.isFinite(oepa) && oepa > 0) {
+                statsMap[key].sum += oepa;
+                statsMap[key].count += 1;
+            }
         }
 
         const procedures = Object.values(statsMap).map(s => ({
             desc: s.desc,
             code: s.code,
-            avg_epa: Number((s.sum / s.count).toFixed(2)),
+            avg_epa: s.count > 0 ? Number((s.sum / s.count).toFixed(2)) : 0,
             count: s.count,
+            totalCount: s.totalCount,
         }));
 
         return NextResponse.json({ success: true, procedures });

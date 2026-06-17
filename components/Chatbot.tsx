@@ -1,10 +1,12 @@
+// chatbot.tsx
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   TraineeListItem, TraineeDetail, CohortProcedureItem, TraineeMatch, ProcedureDrilldown,
-  resolveTrainee, filterCohortByPhrase, extractPgyFilter, pickMatchSet,
-  buildProcedureDrilldown, topProcedureBreakdown, aggregateCohort, displayName, Trend,
+  ProcedureGroupSummary, resolveTrainee, filterCohortByPhrase, extractPgyFilter, pickMatchSet,
+  buildProcedureDrilldown, topProcedureBreakdown, topCohortProcedureBreakdown, aggregateCohort, displayName, Trend,
+  summarizeProcedureGroups, summarizeCohortGroups,
 } from '@/lib/epaChatbotEngine';
 
 type MatchSource = 'description' | 'dictation' | 'unscoped';
@@ -14,9 +16,10 @@ type ChatMessage =
   | { id: string; role: 'bot'; kind: 'help' | 'error'; text: string }
   | { id: string; role: 'bot'; kind: 'ambiguous-trainee'; candidates: TraineeMatch[]; pendingRemainder: string; pendingPgy: number | null }
   | { id: string; role: 'bot'; kind: 'trainee-overview'; trainee: TraineeListItem; detail: TraineeDetail }
-  | { id: string; role: 'bot'; kind: 'procedure-drilldown'; trainee: TraineeListItem; drilldown: ProcedureDrilldown; matchSource: MatchSource; cohortAvg: { avg: number; count: number } | null; pgyUsed: number | null }
-  | { id: string; role: 'bot'; kind: 'cohort-only'; phrase: string; cohortAvg: { avg: number; count: number }; pgyUsed: number | null }
-  | { id: string; role: 'bot'; kind: 'no-match'; traineeName: string; phrase: string; knownProcedures: { label: string; count: number; avg: number | null }[] };
+  | { id: string; role: 'bot'; kind: 'procedure-drilldown'; trainee: TraineeListItem; drilldown: ProcedureDrilldown; matchSource: MatchSource; cohortAvg: { avg: number | null; count: number; totalCount: number } | null; pgyUsed: number | null; groupSummary: ProcedureGroupSummary }
+  | { id: string; role: 'bot'; kind: 'cohort-only'; groupSummary: ProcedureGroupSummary; cohortAvg: { avg: number | null; count: number; totalCount: number }; pgyUsed: number | null }  
+  | { id: string; role: 'bot'; kind: 'no-match'; trainee: TraineeListItem; traineeName: string; phrase: string; pgyUsed: number | null; knownProcedures: { label: string; count: number; avg: number | null }[] }
+  | { id: string; role: 'bot'; kind: 'cohort-no-match'; phrase: string; pgyUsed: number | null; knownProcedures: { label: string; count: number; avg: number | null }[] };
 
 const uid = () => Math.random().toString(36).slice(2);
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -29,6 +32,22 @@ const TREND_LABEL: Record<Trend, { label: string; icon: string; color: string }>
 };
 
 const SUGGESTIONS = ["Moon, G-tube", "Hanzhou Li, Thrombectomy", "PGY 2 Paracentesis"];
+
+function noMatchMessage(trainee: TraineeListItem, baseline: TraineeDetail, remainder: string, pgyUsed: number | null): ChatMessage {
+  return {
+    id: uid(), role: 'bot', kind: 'no-match',
+    trainee, traineeName: displayName(trainee), phrase: remainder, pgyUsed,
+    knownProcedures: topProcedureBreakdown(baseline.procedures, 5),
+  };
+}
+
+function cohortNoMatchMessage(phrase: string, pgyUsed: number | null, cohort: CohortProcedureItem[]): ChatMessage {
+  return {
+    id: uid(), role: 'bot', kind: 'cohort-no-match',
+    phrase, pgyUsed,
+    knownProcedures: topCohortProcedureBreakdown(cohort, 5),
+  };
+}
 
 export default function Chatbot() {
   const [open, setOpen] = useState(false);
@@ -108,11 +127,7 @@ export default function Chatbot() {
     const filtered = await loadTraineeDetail(trainee.user_id, remainder);
 
     if (filtered.procedures.length === 0) {
-      append({
-        id: uid(), role: 'bot', kind: 'no-match',
-        traineeName: displayName(trainee), phrase: remainder,
-        knownProcedures: topProcedureBreakdown(baseline.procedures, 5),
-      });
+      append(noMatchMessage(trainee, baseline, remainder, explicitPgy));
       return;
     }
 
@@ -120,25 +135,63 @@ export default function Chatbot() {
     // ContentText-only matches if NO description-based match exists
     const { matched, source } = pickMatchSet(filtered.procedures);
 
-    const drilldown = buildProcedureDrilldown(matched, remainder);
+    // Derive the label from what was actually matched (proc_desc/proc_code on
+    // the matched rows) rather than echoing the typed search text back. Also
+    // doubles as a sanity check: if nothing in the matched set has a usable
+    // description/code, there's nothing real to summarize.
+    const groupSummary = summarizeProcedureGroups(matched);
+    if (!groupSummary) {
+      append(noMatchMessage(trainee, baseline, remainder, explicitPgy));
+      return;
+    }
+
     const cohort = await loadCohortVocab(explicitPgy ?? trainee.pgy ?? null);
+
+    // ContentText-only hits are the lowest-confidence match type — a stray
+    // mention in dictation text rather than a coded procedure. Cross-check
+    // against the cohort's known procedure vocabulary before presenting one
+    // as a summary, so a garbled or unrelated query falls through to
+    // no-match instead of producing a misleading card.
+    if (source === 'dictation' && filterCohortByPhrase(cohort, remainder).length === 0) {
+      append(noMatchMessage(trainee, baseline, remainder, explicitPgy));
+      return;
+    }
+
+    const drilldown = buildProcedureDrilldown(matched, groupSummary.label);
     const cohortAvg = aggregateCohort(filterCohortByPhrase(cohort, remainder));
 
     append({
       id: uid(), role: 'bot', kind: 'procedure-drilldown',
-      trainee, drilldown, matchSource: source, cohortAvg, pgyUsed: explicitPgy ?? trainee.pgy,
+      trainee, drilldown, matchSource: source, cohortAvg, pgyUsed: explicitPgy ?? trainee.pgy, groupSummary,
     });
   }
 
   async function respondForCohortOnly(remainder: string, explicitPgy: number | null) {
     const cohort = await loadCohortVocab(explicitPgy);
     const matches = filterCohortByPhrase(cohort, remainder);
-    const cohortAvg = aggregateCohort(matches);
-    if (!cohortAvg) {
-      append({ id: uid(), role: 'bot', kind: 'help', text: `I couldn't find a trainee or procedure matching "${remainder}". Try a last name plus a procedure, e.g. "Smith G-tube".` });
+
+    if (matches.length === 0) {
+      if (explicitPgy != null) {
+        append(cohortNoMatchMessage(remainder, explicitPgy, cohort));
+      } else {
+        append({ id: uid(), role: 'bot', kind: 'help', text: `I couldn't find a trainee or procedure matching "${remainder}". Try a last name plus a procedure, e.g. "Smith G-tube".` });
+      }
       return;
     }
-    append({ id: uid(), role: 'bot', kind: 'cohort-only', phrase: remainder, cohortAvg, pgyUsed: explicitPgy });
+
+    const cohortAvg = aggregateCohort(matches);
+    const groupSummary = summarizeCohortGroups(matches);
+
+    if (!cohortAvg || !groupSummary) {
+      if (explicitPgy != null) {
+        append(cohortNoMatchMessage(remainder, explicitPgy, cohort));
+      } else {
+        append({ id: uid(), role: 'bot', kind: 'help', text: `I couldn't find a trainee or procedure matching "${remainder}". Try a last name plus a procedure, e.g. "Smith G-tube".` });
+      }
+      return;
+    }
+
+    append({ id: uid(), role: 'bot', kind: 'cohort-only', groupSummary, cohortAvg, pgyUsed: explicitPgy });
   }
 
   async function handleSend(raw: string) {
@@ -181,6 +234,28 @@ export default function Chatbot() {
     }
   }
 
+  async function handleKnownProcedurePick(trainee: TraineeListItem, label: string, pgyUsed: number | null) {
+    setLoading(true);
+    try {
+      await respondForTrainee(trainee, label, pgyUsed);
+    } catch (e: any) {
+      append({ id: uid(), role: 'bot', kind: 'error', text: e?.message || 'Something went wrong fetching that data.' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSelectCohortProcedure(label: string, pgyUsed: number | null) {
+    setLoading(true);
+    try {
+      await respondForCohortOnly(label, pgyUsed);
+    } catch (e: any) {
+      append({ id: uid(), role: 'bot', kind: 'error', text: e?.message || 'Something went wrong fetching that data.' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="fixed bottom-5 right-5 z-50">
       {open ? (
@@ -204,7 +279,15 @@ export default function Chatbot() {
               </div>
             )}
 
-            {messages.map(m => <MessageBubble key={m.id} msg={m} onPickAmbiguous={handleAmbiguousPick} />)}
+            {messages.map(m => (
+              <MessageBubble
+                key={m.id}
+                msg={m}
+                onPickAmbiguous={handleAmbiguousPick}
+                onSelectKnownProcedure={handleKnownProcedurePick}
+                onSelectCohortProcedure={handleSelectCohortProcedure}
+              />
+            ))}
 
             {loading && (
               <div className="flex items-center gap-1 px-1 text-slate-400">
@@ -269,7 +352,108 @@ export default function Chatbot() {
   );
 }
 
-function MessageBubble({ msg, onPickAmbiguous }: { msg: ChatMessage; onPickAmbiguous: (c: TraineeMatch, remainder: string, pgy: number | null) => void }) {
+// Small chevron toggle for the "show list of procedure types" disclosure.
+// Returns null when there's only one group, since there's nothing to expand.
+function ProcedureGroupToggle({
+  groupSummary, expanded, onToggle,
+}: { groupSummary: ProcedureGroupSummary; expanded: boolean; onToggle: () => void }) {
+  if (groupSummary.groupCount <= 1) return null;
+  const tooltip = expanded ? 'Hide list of procedure types' : 'Show list of procedure types';
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={tooltip}
+      aria-label={tooltip}
+      aria-expanded={expanded}
+      className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        className={`h-3.5 w-3.5 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
+  );
+}
+
+function ProcedureGroupList({ groups }: { groups: { label: string; count: number }[] }) {
+  return (
+    <div className="max-h-28 space-y-0.5 overflow-y-auto rounded-lg bg-slate-50 px-2 py-1.5">
+      {groups.map(g => (
+        <div key={g.label} className="flex justify-between gap-2 text-xs text-slate-500">
+          <span className="truncate">{g.label}</span>
+          <span className="whitespace-nowrap text-slate-400">{g.count}×</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type ProcedureDrilldownMessage = Extract<ChatMessage, { kind: 'procedure-drilldown' }>;
+type CohortOnlyMessage = Extract<ChatMessage, { kind: 'cohort-only' }>;
+
+function ProcedureDrilldownCard({ msg }: { msg: ProcedureDrilldownMessage }) {
+  const [expanded, setExpanded] = useState(false);
+  const { trainee, drilldown, matchSource, cohortAvg, pgyUsed, groupSummary } = msg;
+  const trend = TREND_LABEL[drilldown.trend];
+  return (
+    <Card>
+      <div className="flex items-center gap-1">
+        <CardTitle>{displayName(trainee)} · {drilldown.procedureLabel}</CardTitle>
+        <ProcedureGroupToggle groupSummary={groupSummary} expanded={expanded} onToggle={() => setExpanded(v => !v)} />
+      </div>
+      {expanded && groupSummary.groupCount > 1 && <ProcedureGroupList groups={groupSummary.allGroups} />}
+      {matchSource === 'dictation' && (
+        <p className="text-xs italic text-amber-600">
+          No procedure description/code matched directly — based on mentions found in report text.
+        </p>
+      )}
+      <Stat label="Last Performed:" value={drilldown.lastDate ? fmtDate(drilldown.lastDate) : '—'} />
+      <Stat label="Average EPA:" value={drilldown.averageEpa ?? '—'} sub={`${drilldown.scoredCount} scored of ${drilldown.totalCount} cases`} />
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-slate-500">Trend (last {drilldown.last5.length}): </span>
+        <span className={`font-medium ${trend.color}`}>{trend.icon} {trend.label}</span>
+      </div>
+      {drilldown.last5.length > 0 && (
+        <p className="text-xs text-slate-400">Scores: {drilldown.last5.map(s => s.score).join(' → ')}</p>
+      )}
+      {cohortAvg && (
+        <p className="mt-1 text-xs text-slate-400">
+          {pgyUsed ? `PGY-${pgyUsed} Cohort Avg` : 'Cohort Avg'}: {cohortAvg.avg ?? '—'} ({cohortAvg.count} scored of {cohortAvg.totalCount} cases)
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function CohortOnlyCard({ msg }: { msg: CohortOnlyMessage }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <Card>
+      <div className="flex items-center gap-1">
+        <CardTitle>{msg.pgyUsed ? `PGY-${msg.pgyUsed} · ` : ''}{msg.groupSummary.label}</CardTitle>
+        <ProcedureGroupToggle groupSummary={msg.groupSummary} expanded={expanded} onToggle={() => setExpanded(v => !v)} />
+      </div>
+      {expanded && msg.groupSummary.groupCount > 1 && <ProcedureGroupList groups={msg.groupSummary.allGroups} />}
+      <Stat label="Cohort Avg EPA:" value={msg.cohortAvg.avg ?? '—'} sub={`${msg.cohortAvg.count} scored of ${msg.cohortAvg.totalCount} cases`} />    
+    </Card>
+  );
+}
+
+function MessageBubble({
+  msg, onPickAmbiguous, onSelectKnownProcedure, onSelectCohortProcedure,
+}: {
+  msg: ChatMessage;
+  onPickAmbiguous: (c: TraineeMatch, remainder: string, pgy: number | null) => void;
+  onSelectKnownProcedure: (trainee: TraineeListItem, label: string, pgyUsed: number | null) => void;
+  onSelectCohortProcedure: (label: string, pgyUsed: number | null) => void;
+}) {
   if (msg.role === 'user') {
     return <div className="ml-auto max-w-[85%] rounded-2xl bg-slate-600 px-3 py-2 text-sm text-white">{msg.text}</div>;
   }
@@ -306,9 +490,6 @@ function MessageBubble({ msg, onPickAmbiguous }: { msg: ChatMessage; onPickAmbig
           <Stat label="Average EPA" value={detail.stats.avg_epa || '—'} />
           <Stat label="Total reports" value={detail.stats.total_reports} />
           <Stat label="Cases this month" value={detail.stats.procedures} />
-          {(detail.stats.feedback_requested > 0 || detail.stats.feedback_discussed > 0) && (
-            <Stat label="Feedback pending / discussed" value={`${detail.stats.feedback_requested} / ${detail.stats.feedback_discussed}`} />
-          )}
           {top.length > 0 && (
             <div className="mt-2 space-y-1">
               <p className="text-xs font-medium text-slate-500">Top procedures</p>
@@ -324,40 +505,38 @@ function MessageBubble({ msg, onPickAmbiguous }: { msg: ChatMessage; onPickAmbig
       );
     }
 
-    case 'procedure-drilldown': {
-      const { trainee, drilldown, matchSource, cohortAvg, pgyUsed } = msg;
-      const trend = TREND_LABEL[drilldown.trend];
-      return (
-        <Card>
-          <CardTitle>{displayName(trainee)} · {drilldown.procedureLabel}</CardTitle>
-          {matchSource === 'dictation' && (
-            <p className="text-xs italic text-amber-600">
-              No procedure description/code matched directly — based on mentions found in report text.
-            </p>
-          )}
-          <Stat label="Last Performed:" value={drilldown.lastDate ? fmtDate(drilldown.lastDate) : '—'} />
-          <Stat label="Average EPA:" value={drilldown.averageEpa ?? '—'} sub={`${drilldown.scoredCount} scored of ${drilldown.totalCount} cases`} />
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-500">Trend (last {drilldown.last5.length}): </span>
-            <span className={`font-medium ${trend.color}`}>{trend.icon} {trend.label}</span>
-          </div>
-          {drilldown.last5.length > 0 && (
-            <p className="text-xs text-slate-400">Scores: {drilldown.last5.map(s => s.score).join(' → ')}</p>
-          )}
-          {cohortAvg && (
-            <p className="mt-1 text-xs text-slate-400">
-              {pgyUsed ? `PGY-${pgyUsed} Cohort Avg` : 'Cohort Avg'}: {cohortAvg.avg} ({cohortAvg.count} cases)
-            </p>
-          )}
-        </Card>
-      );
-    }
+    case 'procedure-drilldown':
+      return <ProcedureDrilldownCard msg={msg} />;
 
     case 'cohort-only':
+      return <CohortOnlyCard msg={msg} />;
+
+    case 'cohort-no-match':
       return (
         <Card>
-          <CardTitle>{msg.pgyUsed ? `PGY-${msg.pgyUsed} · ` : ''}{msg.phrase}</CardTitle>
-          <Stat label="Cohort average EPA" value={msg.cohortAvg.avg} sub={`${msg.cohortAvg.count} cases`} />
+          <CardTitle>No "{msg.phrase}" cases for {msg.pgyUsed ? `PGY-${msg.pgyUsed}` : 'this cohort'}</CardTitle>
+          {msg.knownProcedures.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs text-slate-500">On file for this cohort — tap to view:</p>
+              {msg.knownProcedures.map(p => (
+                p.label === 'Unknown' ? (
+                  <div key={p.label} className="flex justify-between text-xs text-slate-500">
+                    <span className="truncate pr-2">{p.label}</span>
+                    <span className="text-slate-400">{p.count}×</span>
+                  </div>
+                ) : (
+                  <button
+                    key={p.label}
+                    onClick={() => onSelectCohortProcedure(p.label, msg.pgyUsed)}
+                    className="flex w-full items-center justify-between rounded-lg px-1 py-0.5 text-left text-xs text-slate-600 hover:bg-slate-50"
+                  >
+                    <span className="truncate pr-2">{p.label}</span>
+                    <span className="whitespace-nowrap text-slate-400">{p.count}×</span>
+                  </button>
+                )
+              ))}
+            </div>
+          )}
         </Card>
       );
 
@@ -367,12 +546,23 @@ function MessageBubble({ msg, onPickAmbiguous }: { msg: ChatMessage; onPickAmbig
           <CardTitle>No "{msg.phrase}" cases for {msg.traineeName}</CardTitle>
           {msg.knownProcedures.length > 0 && (
             <div className="space-y-1">
-              <p className="text-xs text-slate-500">On file for this trainee:</p>
+              <p className="text-xs text-slate-500">On file for this trainee — tap to view:</p>
               {msg.knownProcedures.map(p => (
-                <div key={p.label} className="flex justify-between text-xs text-slate-600">
-                  <span className="truncate pr-2">{p.label}</span>
-                  <span className="text-slate-400">{p.count}×</span>
-                </div>
+                p.label === 'Unknown' ? (
+                  <div key={p.label} className="flex justify-between text-xs text-slate-500">
+                    <span className="truncate pr-2">{p.label}</span>
+                    <span className="text-slate-400">{p.count}×</span>
+                  </div>
+                ) : (
+                  <button
+                    key={p.label}
+                    onClick={() => onSelectKnownProcedure(msg.trainee, p.label, msg.pgyUsed)}
+                    className="flex w-full items-center justify-between rounded-lg px-1 py-0.5 text-left text-xs text-slate-600 hover:bg-slate-50"
+                  >
+                    <span className="truncate pr-2">{p.label}</span>
+                    <span className="whitespace-nowrap text-slate-400">{p.count}×</span>
+                  </button>
+                )
               ))}
             </div>
           )}

@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "target": "ES2017",
     "lib": [
       "dom",
@@ -31,7 +32,8 @@
       ],
       "CONFIG": [
         "./postcss.config.mjs"
-      ]
+      ],
+      "@/*": ["./*"]
     }
   },
   "include": [

@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import AttendingCohortChart from '../../components/AttendingCohortChart';
-import AttendingTraineeTable from '../../components/AttendingTraineeTable';
-import CohortStrengthsWeaknesses from '../../components/CohortStrengthsWeaknesses';
-import DashboardToggle from '../../components/DashboardToggle';
+import AttendingCohortChart from '@/components/AttendingCohortChart';
+import AttendingTraineeTable from '@/components/AttendingTraineeTable';
+import CohortStrengthsWeaknesses from '@/components/CohortStrengthsWeaknesses';
+import Chatbot from '@/components/Chatbot';
+import DashboardToggle from '@/components/DashboardToggle';
 import { useRouter } from 'next/navigation';
 
 type Trainee = {
@@ -555,6 +556,14 @@ export default function AttendingPage() {
                     </div>
                 )}
             </div>
+            
+            {/* Chatbot component at the bottom of the page */}
+            <div style={{ minHeight: '100vh', width: '100%', /* ...existing styles... */ }}>
+                <div style={{ maxWidth: 'calc(100vw - 40px)', margin: '0 auto' }}>
+                    {/* ...all your existing header / filters / modal / chart / table markup... */}
+                </div>
+                <Chatbot />
+            </div>
         </div>
-    );
+    );   
 }

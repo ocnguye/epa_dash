@@ -34,6 +34,10 @@ export async function GET(req: NextRequest, context: any) {
             return NextResponse.json({ success: false, message: 'Invalid trainee id' }, { status: 400 });
         }
 
+        // NEW: optional free-text search, e.g. /api/attendingepa/trainee/14?q=g%20tube
+        const { searchParams } = new URL(req.url);
+        const q = searchParams.get('q')?.trim() || null;
+
         const [userRows] = await connection.execute(
             `SELECT user_id, username, first_name, last_name, preferred_name, pgy, role FROM users WHERE user_id = ?`,
             [traineeId]
@@ -54,8 +58,33 @@ export async function GET(req: NextRequest, context: any) {
             role: rawUser.role ?? null,
         } as any;
 
-        // Procedures — driven through report_participants, LEFT JOIN epa_scores so
-        // unscored reports are included. GROUP_CONCAT for attending handles co-supervised reports.
+        const searchClause = q
+            ? `AND (
+                    r.ProcedureDescList LIKE ?
+                    OR r.ProcedureCodeList LIKE ?
+                    OR MATCH(r.ContentText) AGAINST (? IN BOOLEAN MODE)
+                )`
+            : '';
+
+        // NEW: tells the client whether this row matched via the formal procedure fields
+        // (high confidence) vs only via free-text dictation (lower confidence, used as fallback)
+        const descMatchSelect = q
+            ? `CASE WHEN r.ProcedureDescList LIKE ? OR r.ProcedureCodeList LIKE ? THEN 1 ELSE 0 END AS desc_match,`
+            : '';
+
+        /// Actual order of `?` in the SQL text above, top to bottom:
+        // 1. desc_match CASE, part 1   (q)
+        // 2. desc_match CASE, part 2   (q)
+        // 3. seek_feedback subquery 1  (traineeId)
+        // 4. seek_feedback subquery 2  (traineeId)
+        // 5. WHERE rp.user_id          (traineeId)
+        // 6-8. searchClause            (q, q, q)
+
+        const procedureParams: any[] = [];
+        if (q) procedureParams.push(`%${q}%`, `%${q}%`);
+        procedureParams.push(traineeId, traineeId, traineeId);
+        if (q) procedureParams.push(`%${q}%`, `%${q}%`, `${q}*`);
+
         const [procedures] = await connection.execute(
             `SELECT
                 r.ReportID AS report_id,
@@ -67,6 +96,7 @@ export async function GET(req: NextRequest, context: any) {
                 r.Attending AS raw_attending,
                 r.Trainee AS raw_trainee,
                 CONCAT(u_tr.first_name, ' ', u_tr.last_name) AS trainee_name,
+                ${descMatchSelect}
                 (
                     SELECT GROUP_CONCAT(CONCAT(u_att.first_name, ' ', u_att.last_name) SEPARATOR ', ')
                     FROM report_participants rp_att
@@ -76,10 +106,10 @@ export async function GET(req: NextRequest, context: any) {
                 (
                     CASE
                         WHEN (SELECT SUM(fr.status = 'feedback_requested') FROM feedback_requests fr
-                              WHERE fr.report_id = r.ReportID AND fr.trainee_user_id = ?) > 0
+                            WHERE fr.report_id = r.ReportID AND fr.trainee_user_id = ?) > 0
                             THEN 'feedback_requested'
                         WHEN (SELECT SUM(fr.status = 'discussed') FROM feedback_requests fr
-                              WHERE fr.report_id = r.ReportID AND fr.trainee_user_id = ?) > 0
+                            WHERE fr.report_id = r.ReportID AND fr.trainee_user_id = ?) > 0
                             THEN 'discussed'
                         ELSE 'not_required'
                     END
@@ -89,13 +119,16 @@ export async function GET(req: NextRequest, context: any) {
             JOIN users u_tr ON u_tr.user_id = rp.user_id
             LEFT JOIN epa_scores es ON es.report_participant_id = rp.id
             WHERE rp.user_id = ?
-              AND rp.role = 'trainee'
+            AND rp.role = 'trainee'
+            ${searchClause}
             ORDER BY r.CreateDate DESC`,
-            [traineeId, traineeId, traineeId]
+            procedureParams
         );
 
-        // Stats — report_participants as source of truth, LEFT JOIN epa_scores so
-        // unscored reports count toward total_reports
+        // Stats — unchanged, intentionally NOT filtered by q.
+        // The chatbot's drilldown numbers (avg/trend) come from the filtered `procedures`
+        // array client-side; this `stats` block is the trainee's overall summary and should
+        // stay independent of whatever search phrase was typed.
         const [statsRows] = await connection.execute(
             `SELECT
                 COALESCE(ROUND(AVG(es_main.epa_score), 2), 0) AS avg_epa,

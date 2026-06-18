@@ -93,7 +93,7 @@ export default function ProvisionGauge({ rate, size = 360, stroke = 14 }: Provis
                         letterSpacing: '0.04em',
                         lineHeight: 1.4,
                     }}>
-                        Avg Provision<br />Rate
+                        Avg EPA Provision<br />Rate
                     </div>
                 </div>
             </div>

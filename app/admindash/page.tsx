@@ -224,16 +224,6 @@ export default function AdminDash() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        <button onClick={() => router.push('/attendingepa')} style={headerBtnBase}
-                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 8px rgba(0,0,0,0.08)'; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)'; }}>
-                            Attending view
-                        </button>
-                        <button onClick={() => router.push('/epadash')} style={headerBtnBase}
-                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 8px rgba(0,0,0,0.08)'; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)'; }}>
-                            Trainee view
-                        </button>
                         <button
                             onClick={() => { setProfileError(''); setProfileSuccess(''); setProfileForm({ username: currentUser?.username ?? '', password: '', confirm_password: '', preferred_name: currentUser?.preferred_name ?? '', first_name: currentUser?.first_name ?? '', last_name: currentUser?.last_name ?? '' }); setShowProfileModal(true); }}
                             style={headerBtnBase}
@@ -470,7 +460,7 @@ export default function AdminDash() {
                                                 color: '#374151',
                                                 fontWeight: detailTab === t ? 700 : 400,
                                             }}>
-                                                {t === 'all' ? 'All reports' : t === 'missing' ? 'Missing EPA' : 'EPA provided'}
+                                                {t === 'all' ? 'All reports' : t === 'missing' ? 'Missing EPA' : 'EPA Provided'}
                                             </button>
                                         ))}
                                     </div>

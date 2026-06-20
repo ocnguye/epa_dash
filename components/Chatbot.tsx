@@ -5,21 +5,35 @@ import { useState, useEffect, useRef } from 'react';
 import {
   TraineeListItem, TraineeDetail, CohortProcedureItem, TraineeMatch, ProcedureDrilldown,
   ProcedureGroupSummary, resolveTrainee, filterCohortByPhrase, extractPgyFilter, pickMatchSet,
-  buildProcedureDrilldown, topProcedureBreakdown, topCohortProcedureBreakdown, aggregateCohort, displayName, Trend,
-  summarizeProcedureGroups, summarizeCohortGroups,
+  buildProcedureDrilldown, topProcedureBreakdown, topCohortProcedureBreakdown, aggregateCohort,
+  displayName, Trend, summarizeProcedureGroups, summarizeCohortGroups, isDisambiguationResponse,
+  ProcedureTypeCandidate,
 } from '@/lib/epaChatbotEngine';
 
 type MatchSource = 'description' | 'dictation' | 'unscoped';
+
+// ─── Message types ────────────────────────────────────────────────────────────
 
 type ChatMessage =
   | { id: string; role: 'user'; kind: 'text'; text: string }
   | { id: string; role: 'bot'; kind: 'help' | 'error'; text: string }
   | { id: string; role: 'bot'; kind: 'ambiguous-trainee'; candidates: TraineeMatch[]; pendingRemainder: string; pendingPgy: number | null }
+  | {
+      id: string; role: 'bot'; kind: 'ambiguous-procedure';
+      candidates: ProcedureTypeCandidate[];
+      matchedAlias: string | null;
+      originalQuery: string;
+      // Context needed to re-run the original request after the user picks
+      trainee: TraineeListItem | null;   // null = cohort-only query
+      pendingPgy: number | null;
+    }
   | { id: string; role: 'bot'; kind: 'trainee-overview'; trainee: TraineeListItem; detail: TraineeDetail }
   | { id: string; role: 'bot'; kind: 'procedure-drilldown'; trainee: TraineeListItem; drilldown: ProcedureDrilldown; matchSource: MatchSource; cohortAvg: { avg: number | null; count: number; totalCount: number } | null; pgyUsed: number | null; groupSummary: ProcedureGroupSummary }
-  | { id: string; role: 'bot'; kind: 'cohort-only'; groupSummary: ProcedureGroupSummary; cohortAvg: { avg: number | null; count: number; totalCount: number }; pgyUsed: number | null }  
+  | { id: string; role: 'bot'; kind: 'cohort-only'; groupSummary: ProcedureGroupSummary; cohortAvg: { avg: number | null; count: number; totalCount: number }; pgyUsed: number | null }
   | { id: string; role: 'bot'; kind: 'no-match'; trainee: TraineeListItem; traineeName: string; phrase: string; pgyUsed: number | null; knownProcedures: { label: string; count: number; avg: number | null }[] }
   | { id: string; role: 'bot'; kind: 'cohort-no-match'; phrase: string; pgyUsed: number | null; knownProcedures: { label: string; count: number; avg: number | null }[] };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const uid = () => Math.random().toString(36).slice(2);
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -31,7 +45,7 @@ const TREND_LABEL: Record<Trend, { label: string; icon: string; color: string }>
   insufficient: { label: 'Not enough data yet', icon: '—', color: 'text-slate-400' },
 };
 
-const SUGGESTIONS = ["Moon, G-tube", "Hanzhou Li, Thrombectomy", "PGY 2 Paracentesis"];
+const SUGGESTIONS = ['Moon, G-tube', 'Hanzhou Li, Thrombectomy', 'PGY 2 Paracentesis'];
 
 function noMatchMessage(trainee: TraineeListItem, baseline: TraineeDetail, remainder: string, pgyUsed: number | null): ChatMessage {
   return {
@@ -49,6 +63,8 @@ function cohortNoMatchMessage(phrase: string, pgyUsed: number | null, cohort: Co
   };
 }
 
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function Chatbot() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -56,7 +72,6 @@ export default function Chatbot() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const traineeListRef = useRef<TraineeListItem[]>([]);
-  // cache key: `${id}` for the unfiltered baseline, `${id}::${phrase}` for a server-filtered query
   const traineeDetailCache = useRef<Map<string, TraineeDetail>>(new Map());
   const cohortCache = useRef<Map<string, CohortProcedureItem[]>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -75,6 +90,8 @@ export default function Chatbot() {
     setMessages(prev => [...prev, msg]);
   }
 
+  // ─── Data fetching ──────────────────────────────────────────────────────────
+
   async function loadTraineeList(): Promise<TraineeListItem[]> {
     const res = await fetch('/api/attendingepa/trainees', { credentials: 'include' });
     const data = await res.json();
@@ -83,95 +100,193 @@ export default function Chatbot() {
     return data.trainees;
   }
 
-  // phrase omitted -> unfiltered baseline (full history, used for overview + "known procedures")
-  // phrase provided -> server-side filtered by proc_desc/proc_code/ContentText
-  async function loadTraineeDetail(id: number, phrase?: string): Promise<TraineeDetail> {
+  /**
+   * Fetches trainee detail, optionally scoped by procedure phrase or explicit
+   * proc_type_ids (post-disambiguation). Returns the raw response body so the
+   * caller can inspect it for a `disambiguation` payload before treating it as
+   * a TraineeDetail.
+   */
+  async function fetchTraineeDetail(
+    id: number,
+    opts: { phrase?: string; procTypeIds?: number[] } = {},
+  ): Promise<{ raw: any; detail?: TraineeDetail }> {
+    const { phrase, procTypeIds } = opts;
     const trimmed = phrase?.trim();
-    const cacheKey = trimmed ? `${id}::${trimmed.toLowerCase()}` : `${id}`;
-    const cached = traineeDetailCache.current.get(cacheKey);
-    if (cached) return cached;
 
-    const url = trimmed
-      ? `/api/attendingepa/trainees/${id}?q=${encodeURIComponent(trimmed)}`
-      : `/api/attendingepa/trainees/${id}`;
+    // Build cache key and URL
+    let cacheKey: string;
+    let url: string;
+
+    if (procTypeIds && procTypeIds.length > 0) {
+      const idsStr = procTypeIds.sort().join(',');
+      cacheKey = `${id}::ids:${idsStr}`;
+      url = `/api/attendingepa/trainees/${id}?proc_type_ids=${encodeURIComponent(idsStr)}`;
+    } else if (trimmed) {
+      cacheKey = `${id}::${trimmed.toLowerCase()}`;
+      url = `/api/attendingepa/trainees/${id}?q=${encodeURIComponent(trimmed)}`;
+    } else {
+      cacheKey = `${id}`;
+      url = `/api/attendingepa/trainees/${id}`;
+    }
+
+    const cached = traineeDetailCache.current.get(cacheKey);
+    if (cached) return { raw: null, detail: cached };
+
     const res = await fetch(url, { credentials: 'include' });
     const data = await res.json();
+
+    // Disambiguation response — do NOT cache; return raw for caller to handle
+    if (isDisambiguationResponse(data)) return { raw: data };
+
     if (!data.success) throw new Error(data.message || 'Failed to load trainee detail');
+
     const detail: TraineeDetail = { user: data.user, procedures: data.procedures, stats: data.stats };
     traineeDetailCache.current.set(cacheKey, detail);
-    return detail;
+    return { raw: data, detail };
   }
 
-  async function loadCohortVocab(pgy: number | null): Promise<CohortProcedureItem[]> {
-    const key = pgy == null ? 'all' : String(pgy);
-    const cached = cohortCache.current.get(key);
-    if (cached) return cached;
-    const url = pgy ? `/api/attendingepa/cohortproc?pgy=${pgy}` : '/api/attendingepa/cohortproc';
+  async function fetchCohortProc(
+    pgy: number | null,
+    opts: { phrase?: string; procTypeIds?: number[] } = {},
+  ): Promise<{ raw: any; procedures?: CohortProcedureItem[] }> {
+    const { phrase, procTypeIds } = opts;
+
+    let cacheKey: string;
+    let url: string;
+
+    if (procTypeIds && procTypeIds.length > 0) {
+      const idsStr = procTypeIds.sort().join(',');
+      cacheKey = `cohort::${pgy ?? 'all'}::ids:${idsStr}`;
+      url = `/api/attendingepa/cohortproc?proc_type_ids=${encodeURIComponent(idsStr)}${pgy != null ? `&pgy=${pgy}` : ''}`;
+    } else if (phrase?.trim()) {
+      cacheKey = `cohort::${pgy ?? 'all'}::${phrase.trim().toLowerCase()}`;
+      url = `/api/attendingepa/cohortproc?q=${encodeURIComponent(phrase.trim())}${pgy != null ? `&pgy=${pgy}` : ''}`;
+    } else {
+      cacheKey = `cohort::${pgy ?? 'all'}`;
+      url = pgy ? `/api/attendingepa/cohortproc?pgy=${pgy}` : '/api/attendingepa/cohortproc';
+    }
+
+    const cached = cohortCache.current.get(cacheKey);
+    if (cached) return { raw: null, procedures: cached };
+
     const res = await fetch(url, { credentials: 'include' });
     const data = await res.json();
+
+    if (isDisambiguationResponse(data)) return { raw: data };
     if (!data.success) throw new Error(data.message || 'Failed to load cohort data');
-    cohortCache.current.set(key, data.procedures);
-    return data.procedures;
+
+    cohortCache.current.set(cacheKey, data.procedures);
+    return { raw: data, procedures: data.procedures };
   }
 
-  async function respondForTrainee(trainee: TraineeListItem, remainder: string, explicitPgy: number | null) {
-    // baseline (unfiltered) detail — cheap after first load, cached per trainee
-    const baseline = await loadTraineeDetail(trainee.user_id);
+  /** Loads unscoped cohort vocab (used for cohort-avg lookup and fallback no-match lists). */
+  async function loadCohortVocab(pgy: number | null): Promise<CohortProcedureItem[]> {
+    const result = await fetchCohortProc(pgy);
+    if (!result.procedures) throw new Error('Failed to load cohort vocab');
+    return result.procedures;
+  }
 
-    if (!remainder.trim()) {
-      append({ id: uid(), role: 'bot', kind: 'trainee-overview', trainee, detail: baseline });
+  // ─── Response builders ──────────────────────────────────────────────────────
+
+  async function respondForTrainee(
+    trainee: TraineeListItem,
+    remainder: string,
+    explicitPgy: number | null,
+    procTypeIds?: number[],
+  ) {
+    const baseline = await fetchTraineeDetail(trainee.user_id);
+    if (!baseline.detail) throw new Error('Failed to load trainee baseline');
+
+    if (!remainder.trim() && !procTypeIds?.length) {
+      append({ id: uid(), role: 'bot', kind: 'trainee-overview', trainee, detail: baseline.detail });
       return;
     }
 
-    // server-filtered set: matches proc_desc/proc_code OR ContentText
-    const filtered = await loadTraineeDetail(trainee.user_id, remainder);
+    // Fetch filtered / scoped detail
+    const filtered = await fetchTraineeDetail(trainee.user_id, {
+      phrase: procTypeIds?.length ? undefined : remainder,
+      procTypeIds,
+    });
 
-    if (filtered.procedures.length === 0) {
-      append(noMatchMessage(trainee, baseline, remainder, explicitPgy));
+    // Disambiguation needed — server returned candidates
+    if (filtered.raw && isDisambiguationResponse(filtered.raw)) {
+      append({
+        id: uid(), role: 'bot', kind: 'ambiguous-procedure',
+        candidates: filtered.raw.disambiguation.candidates,
+        matchedAlias: filtered.raw.disambiguation.matchedAlias,
+        originalQuery: remainder,
+        trainee,
+        pendingPgy: explicitPgy,
+      });
       return;
     }
 
-    // prefer rows that matched on the formal procedure fields; only fall back to
-    // ContentText-only matches if NO description-based match exists
-    const { matched, source } = pickMatchSet(filtered.procedures);
+    if (!filtered.detail || filtered.detail.procedures.length === 0) {
+      append(noMatchMessage(trainee, baseline.detail, remainder, explicitPgy));
+      return;
+    }
 
-    // Derive the label from what was actually matched (proc_desc/proc_code on
-    // the matched rows) rather than echoing the typed search text back. Also
-    // doubles as a sanity check: if nothing in the matched set has a usable
-    // description/code, there's nothing real to summarize.
+    const { matched, source } = pickMatchSet(filtered.detail.procedures);
     const groupSummary = summarizeProcedureGroups(matched);
     if (!groupSummary) {
-      append(noMatchMessage(trainee, baseline, remainder, explicitPgy));
+      append(noMatchMessage(trainee, baseline.detail, remainder, explicitPgy));
       return;
     }
 
     const cohort = await loadCohortVocab(explicitPgy ?? trainee.pgy ?? null);
 
-    // ContentText-only hits are the lowest-confidence match type — a stray
-    // mention in dictation text rather than a coded procedure. Cross-check
-    // against the cohort's known procedure vocabulary before presenting one
-    // as a summary, so a garbled or unrelated query falls through to
-    // no-match instead of producing a misleading card.
     if (source === 'dictation' && filterCohortByPhrase(cohort, remainder).length === 0) {
-      append(noMatchMessage(trainee, baseline, remainder, explicitPgy));
+      append(noMatchMessage(trainee, baseline.detail, remainder, explicitPgy));
       return;
     }
 
     const drilldown = buildProcedureDrilldown(matched, groupSummary.label);
-    const cohortAvg = aggregateCohort(filterCohortByPhrase(cohort, remainder));
+    const cohortAvg = aggregateCohort(
+      procTypeIds?.length
+        ? cohort  // already scoped by IDs — aggregate whole filtered cohort
+        : filterCohortByPhrase(cohort, remainder),
+    );
 
     append({
       id: uid(), role: 'bot', kind: 'procedure-drilldown',
-      trainee, drilldown, matchSource: source, cohortAvg, pgyUsed: explicitPgy ?? trainee.pgy, groupSummary,
+      trainee, drilldown, matchSource: source, cohortAvg,
+      pgyUsed: explicitPgy ?? trainee.pgy, groupSummary,
     });
   }
 
-  async function respondForCohortOnly(remainder: string, explicitPgy: number | null) {
-    const cohort = await loadCohortVocab(explicitPgy);
-    const matches = filterCohortByPhrase(cohort, remainder);
+  async function respondForCohortOnly(
+    remainder: string,
+    explicitPgy: number | null,
+    procTypeIds?: number[],
+  ) {
+    const result = await fetchCohortProc(explicitPgy, {
+      phrase: procTypeIds?.length ? undefined : remainder,
+      procTypeIds,
+    });
+
+    // Disambiguation needed
+    if (result.raw && isDisambiguationResponse(result.raw)) {
+      append({
+        id: uid(), role: 'bot', kind: 'ambiguous-procedure',
+        candidates: result.raw.disambiguation.candidates,
+        matchedAlias: result.raw.disambiguation.matchedAlias,
+        originalQuery: remainder,
+        trainee: null,
+        pendingPgy: explicitPgy,
+      });
+      return;
+    }
+
+    const procedures = result.procedures;
+    if (!procedures) throw new Error('Failed to load cohort procedures');
+
+    // For procTypeIds path the server already scoped to matching procedures;
+    // for free-text path we filter client-side like before
+    const matches = procTypeIds?.length ? procedures : filterCohortByPhrase(procedures, remainder);
 
     if (matches.length === 0) {
       if (explicitPgy != null) {
+        const cohort = await loadCohortVocab(explicitPgy);
         append(cohortNoMatchMessage(remainder, explicitPgy, cohort));
       } else {
         append({ id: uid(), role: 'bot', kind: 'help', text: `I couldn't find a trainee or procedure matching "${remainder}". Try a last name plus a procedure, e.g. "Smith G-tube".` });
@@ -184,6 +299,7 @@ export default function Chatbot() {
 
     if (!cohortAvg || !groupSummary) {
       if (explicitPgy != null) {
+        const cohort = await loadCohortVocab(explicitPgy);
         append(cohortNoMatchMessage(remainder, explicitPgy, cohort));
       } else {
         append({ id: uid(), role: 'bot', kind: 'help', text: `I couldn't find a trainee or procedure matching "${remainder}". Try a last name plus a procedure, e.g. "Smith G-tube".` });
@@ -193,6 +309,8 @@ export default function Chatbot() {
 
     append({ id: uid(), role: 'bot', kind: 'cohort-only', groupSummary, cohortAvg, pgyUsed: explicitPgy });
   }
+
+  // ─── Event handlers ─────────────────────────────────────────────────────────
 
   async function handleSend(raw: string) {
     const trimmed = raw.trim();
@@ -223,10 +341,30 @@ export default function Chatbot() {
     }
   }
 
-  async function handleAmbiguousPick(candidate: TraineeMatch, pendingRemainder: string, pendingPgy: number | null) {
+  async function handleAmbiguousTraineePick(candidate: TraineeMatch, pendingRemainder: string, pendingPgy: number | null) {
     setLoading(true);
     try {
       await respondForTrainee(candidate.trainee, pendingRemainder, pendingPgy);
+    } catch (e: any) {
+      append({ id: uid(), role: 'bot', kind: 'error', text: e?.message || 'Something went wrong fetching that data.' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /** Called when the attending confirms their multi-select procedure pick. */
+  async function handleProcedureDisambiguationSubmit(
+    msg: Extract<ChatMessage, { kind: 'ambiguous-procedure' }>,
+    selectedIds: number[],
+  ) {
+    if (selectedIds.length === 0) return;
+    setLoading(true);
+    try {
+      if (msg.trainee) {
+        await respondForTrainee(msg.trainee, msg.originalQuery, msg.pendingPgy, selectedIds);
+      } else {
+        await respondForCohortOnly(msg.originalQuery, msg.pendingPgy, selectedIds);
+      }
     } catch (e: any) {
       append({ id: uid(), role: 'bot', kind: 'error', text: e?.message || 'Something went wrong fetching that data.' });
     } finally {
@@ -256,6 +394,8 @@ export default function Chatbot() {
     }
   }
 
+  // ─── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <div className="fixed bottom-5 right-5 z-50">
       {open ? (
@@ -283,7 +423,8 @@ export default function Chatbot() {
               <MessageBubble
                 key={m.id}
                 msg={m}
-                onPickAmbiguous={handleAmbiguousPick}
+                onPickAmbiguousTrainee={handleAmbiguousTraineePick}
+                onProcedureDisambiguationSubmit={handleProcedureDisambiguationSubmit}
                 onSelectKnownProcedure={handleKnownProcedurePick}
                 onSelectCohortProcedure={handleSelectCohortProcedure}
               />
@@ -317,65 +458,116 @@ export default function Chatbot() {
         </div>
       ) : (
         <div className="relative inline-flex group">
-            <div
-                className="pointer-events-none absolute right-full top-1/2 mr-2 -translate-y-1/2
-                            w-56 rounded bg-slate-600 px-2 py-1 text-xs text-white
-                            opacity-0 transition-opacity duration-75
-                            group-hover:opacity-100 group-focus:opacity-100"
-                >
-                Ask about a trainee’s performance on a procedure.
-            </div>
-
-            <button
-                onClick={() => setOpen(true)}
-                className="flex h-12 w-12 items-center justify-center rounded-full bg-[#ffc48c] text-white shadow-lg hover:bg-[#ffc48c]/80"
-                aria-label="Open EPA lookup"
-            >
-                <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                stroke="currentColor"
-                className="h-6 w-6"
-                >
-                <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M18.81,16.23,20,21l-4.95-2.48A9.84,9.84,0,0,1,12,19c-5,0-9-3.58-9-8s4-8,9-8,9,3.58,9,8A7.49,7.49,0,0,1,18.81,16.23Z"
-                />
-                </svg>
-            </button>
+          <div className="pointer-events-none absolute right-full top-1/2 mr-2 -translate-y-1/2 w-56 rounded bg-slate-600 px-2 py-1 text-xs text-white opacity-0 transition-opacity duration-75 group-hover:opacity-100 group-focus:opacity-100">
+            Ask about a trainee's performance on a procedure.
+          </div>
+          <button
+            onClick={() => setOpen(true)}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-[#ffc48c] text-white shadow-lg hover:bg-[#ffc48c]/80"
+            aria-label="Open EPA lookup"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-6 w-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.81,16.23,20,21l-4.95-2.48A9.84,9.84,0,0,1,12,19c-5,0-9-3.58-9-8s4-8,9-8,9,3.58,9,8A7.49,7.49,0,0,1,18.81,16.23Z" />
+            </svg>
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-// Small chevron toggle for the "show list of procedure types" disclosure.
-// Returns null when there's only one group, since there's nothing to expand.
-function ProcedureGroupToggle({
-  groupSummary, expanded, onToggle,
-}: { groupSummary: ProcedureGroupSummary; expanded: boolean; onToggle: () => void }) {
+// ─── Procedure disambiguation card (multi-select) ─────────────────────────────
+
+type AmbiguousProcedureMsg = Extract<ChatMessage, { kind: 'ambiguous-procedure' }>;
+
+function ProcedureDisambiguationCard({
+  msg,
+  onSubmit,
+}: {
+  msg: AmbiguousProcedureMsg;
+  onSubmit: (msg: AmbiguousProcedureMsg, selectedIds: number[]) => void;
+}) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [submitted, setSubmitted] = useState(false);
+
+  function toggle(id: number) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function handleSubmit() {
+    if (selected.size === 0 || submitted) return;
+    setSubmitted(true);
+    onSubmit(msg, Array.from(selected));
+  }
+
+  const aliasLabel = msg.matchedAlias ? `"${msg.matchedAlias}"` : `"${msg.originalQuery}"`;
+  const contextLabel = msg.trainee ? ` for ${displayName(msg.trainee)}` : '';
+
+  return (
+    <Card>
+      <p className="text-xs font-medium text-slate-600">
+        {aliasLabel} matches multiple procedures{contextLabel}. Select all that apply:
+      </p>
+      <div className="space-y-1.5">
+        {msg.candidates.map(c => {
+          const checked = selected.has(c.proc_type_id);
+          return (
+            <button
+              key={c.proc_type_id}
+              type="button"
+              onClick={() => !submitted && toggle(c.proc_type_id)}
+              disabled={submitted}
+              className={`flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors
+                ${checked
+                  ? 'border-slate-400 bg-slate-100 text-slate-800'
+                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}
+                ${submitted ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              {/* Checkbox indicator */}
+              <span className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${checked ? 'border-slate-500 bg-slate-500' : 'border-slate-300 bg-white'}`}>
+                {checked && (
+                  <svg viewBox="0 0 10 8" className="h-2 w-2 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path d="M1 4l3 3 5-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+              <span className="flex-1">
+                <span className="block font-medium leading-tight">{c.proc_desc}</span>
+                {c.proc_code && <span className="text-slate-400">{c.proc_code}</span>}
+                {c.proc_cat && <span className="ml-1 text-slate-400">· {c.proc_cat}</span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={selected.size === 0 || submitted}
+        className="mt-1 w-full rounded-lg bg-slate-700 py-1.5 text-xs font-medium text-white disabled:opacity-40 hover:bg-slate-800 transition-colors"
+      >
+        {submitted ? 'Loading…' : `Show results${selected.size > 1 ? ` (${selected.size} selected)` : ''}`}
+      </button>
+    </Card>
+  );
+}
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
+
+function ProcedureGroupToggle({ groupSummary, expanded, onToggle }: {
+  groupSummary: ProcedureGroupSummary; expanded: boolean; onToggle: () => void;
+}) {
   if (groupSummary.groupCount <= 1) return null;
   const tooltip = expanded ? 'Hide list of procedure types' : 'Show list of procedure types';
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      title={tooltip}
-      aria-label={tooltip}
-      aria-expanded={expanded}
-      className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        className={`h-3.5 w-3.5 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
-      >
+    <button type="button" onClick={onToggle} title={tooltip} aria-label={tooltip} aria-expanded={expanded}
+      className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+        className={`h-3.5 w-3.5 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
       </svg>
     </button>
@@ -441,16 +633,23 @@ function CohortOnlyCard({ msg }: { msg: CohortOnlyMessage }) {
         <ProcedureGroupToggle groupSummary={msg.groupSummary} expanded={expanded} onToggle={() => setExpanded(v => !v)} />
       </div>
       {expanded && msg.groupSummary.groupCount > 1 && <ProcedureGroupList groups={msg.groupSummary.allGroups} />}
-      <Stat label="Cohort Avg EPA:" value={msg.cohortAvg.avg ?? '—'} sub={`${msg.cohortAvg.count} scored of ${msg.cohortAvg.totalCount} cases`} />    
+      <Stat label="Cohort Avg EPA:" value={msg.cohortAvg.avg ?? '—'} sub={`${msg.cohortAvg.count} scored of ${msg.cohortAvg.totalCount} cases`} />
     </Card>
   );
 }
 
+// ─── Message bubble dispatcher ───────────────────────────────────────────────
+
 function MessageBubble({
-  msg, onPickAmbiguous, onSelectKnownProcedure, onSelectCohortProcedure,
+  msg,
+  onPickAmbiguousTrainee,
+  onProcedureDisambiguationSubmit,
+  onSelectKnownProcedure,
+  onSelectCohortProcedure,
 }: {
   msg: ChatMessage;
-  onPickAmbiguous: (c: TraineeMatch, remainder: string, pgy: number | null) => void;
+  onPickAmbiguousTrainee: (c: TraineeMatch, remainder: string, pgy: number | null) => void;
+  onProcedureDisambiguationSubmit: (msg: Extract<ChatMessage, { kind: 'ambiguous-procedure' }>, ids: number[]) => void;
   onSelectKnownProcedure: (trainee: TraineeListItem, label: string, pgyUsed: number | null) => void;
   onSelectCohortProcedure: (label: string, pgyUsed: number | null) => void;
 }) {
@@ -461,7 +660,11 @@ function MessageBubble({
   switch (msg.kind) {
     case 'help':
     case 'error':
-      return <div className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm ${msg.kind === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>{msg.text}</div>;
+      return (
+        <div className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm ${msg.kind === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
+          {msg.text}
+        </div>
+      );
 
     case 'ambiguous-trainee':
       return (
@@ -471,7 +674,7 @@ function MessageBubble({
             {msg.candidates.map(c => (
               <button
                 key={c.trainee.user_id}
-                onClick={() => onPickAmbiguous(c, msg.pendingRemainder, msg.pendingPgy)}
+                onClick={() => onPickAmbiguousTrainee(c, msg.pendingRemainder, msg.pendingPgy)}
                 className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-slate-50"
               >
                 {displayName(c.trainee)} {c.trainee.pgy ? `(PGY-${c.trainee.pgy})` : ''}
@@ -479,6 +682,14 @@ function MessageBubble({
             ))}
           </div>
         </div>
+      );
+
+    case 'ambiguous-procedure':
+      return (
+        <ProcedureDisambiguationCard
+          msg={msg}
+          onSubmit={onProcedureDisambiguationSubmit}
+        />
       );
 
     case 'trainee-overview': {
@@ -518,7 +729,7 @@ function MessageBubble({
           {msg.knownProcedures.length > 0 && (
             <div className="space-y-1">
               <p className="text-xs text-slate-500">On file for this cohort — tap to view:</p>
-              {msg.knownProcedures.map(p => (
+              {msg.knownProcedures.map(p =>
                 p.label === 'Unknown' ? (
                   <div key={p.label} className="flex justify-between text-xs text-slate-500">
                     <span className="truncate pr-2">{p.label}</span>
@@ -534,7 +745,7 @@ function MessageBubble({
                     <span className="whitespace-nowrap text-slate-400">{p.count}×</span>
                   </button>
                 )
-              ))}
+              )}
             </div>
           )}
         </Card>
@@ -547,7 +758,7 @@ function MessageBubble({
           {msg.knownProcedures.length > 0 && (
             <div className="space-y-1">
               <p className="text-xs text-slate-500">On file for this trainee — tap to view:</p>
-              {msg.knownProcedures.map(p => (
+              {msg.knownProcedures.map(p =>
                 p.label === 'Unknown' ? (
                   <div key={p.label} className="flex justify-between text-xs text-slate-500">
                     <span className="truncate pr-2">{p.label}</span>
@@ -563,13 +774,15 @@ function MessageBubble({
                     <span className="whitespace-nowrap text-slate-400">{p.count}×</span>
                   </button>
                 )
-              ))}
+              )}
             </div>
           )}
         </Card>
       );
   }
 }
+
+// ─── Primitives ───────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: React.ReactNode }) {
   return <div className="max-w-[90%] space-y-1.5 rounded-2xl border border-slate-100 bg-white px-3 py-3 text-sm shadow-sm">{children}</div>;
@@ -581,7 +794,10 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
   return (
     <div className="flex items-baseline justify-between">
       <span className="text-slate-500">{label}</span>
-      <span className="text-right text-slate-700">{value}{sub && <span className="ml-1 text-xs text-slate-400">{sub}</span>}</span>
+      <span className="text-right text-slate-700">
+        {value}
+        {sub && <span className="ml-1 text-xs text-slate-400">{sub}</span>}
+      </span>
     </div>
   );
 }

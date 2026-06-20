@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mysql from 'mysql2/promise';
+import { resolveProcedureAliasFromQuery, getProcTypesByIds } from '@/lib/procAliasLookup';
 
 const getConnection = async () => mysql.createConnection({
     host: process.env.AWS_RDS_HOST,
@@ -34,9 +35,17 @@ export async function GET(req: NextRequest, context: any) {
             return NextResponse.json({ success: false, message: 'Invalid trainee id' }, { status: 400 });
         }
 
-        // NEW: optional free-text search, e.g. /api/attendingepa/trainee/14?q=g%20tube
+        // Optional free-text search, e.g. /api/attendingepa/trainee/14?q=g%20tube
         const { searchParams } = new URL(req.url);
         const q = searchParams.get('q')?.trim() || null;
+
+        // Optional follow-up: after the attending picks from a disambiguation
+        // prompt, the client resubmits with explicit proc_type_id(s) instead of
+        // re-sending the ambiguous free-text query, e.g. ?proc_type_ids=5,9
+        const procTypeIdsParam = searchParams.get('proc_type_ids');
+        const requestedProcTypeIds = procTypeIdsParam
+            ? procTypeIdsParam.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0)
+            : [];
 
         const [userRows] = await connection.execute(
             `SELECT user_id, username, first_name, last_name, preferred_name, pgy, role FROM users WHERE user_id = ?`,
@@ -58,32 +67,99 @@ export async function GET(req: NextRequest, context: any) {
             role: rawUser.role ?? null,
         } as any;
 
-        const searchClause = q
-            ? `AND (
-                    r.ProcedureDescList LIKE ?
-                    OR r.ProcedureCodeList LIKE ?
-                    OR MATCH(r.ContentText) AGAINST (? IN BOOLEAN MODE)
-                )`
-            : '';
+        // ── Resolve `q` against the alias table before touching reports ──────
+        //
+        // Replaces the old MATCH(ContentText) AGAINST(...) fallback entirely.
+        // ContentText is free dictation text and its FULLTEXT relevance scoring
+        // surfaced unrelated procedures (e.g. "g tube" matching an adrenal vein
+        // sampling report on incidental token overlap). Alias lookups are exact
+        // and backed by the curated proc_aliases/proc_type_aliases tables, so
+        // they replace that fuzzy fallback with a precise one, with an explicit
+        // disambiguation step when an alias is genuinely ambiguous (e.g. "para"
+        // -> CT/US/IR paracentesis) rather than silently picking or merging.
+        //
+        // canonicalProcDescs ends up holding the proc_desc value(s) to match
+        // ProcedureDescList against. If alias resolution finds nothing, we fall
+        // back to matching the raw query text directly against
+        // ProcedureDescList/ProcedureCodeList — still no ContentText involved.
+        let canonicalProcDescs: string[] = [];
+        let matchedViaAlias = false;
 
-        // NEW: tells the client whether this row matched via the formal procedure fields
-        // (high confidence) vs only via free-text dictation (lower confidence, used as fallback)
-        const descMatchSelect = q
-            ? `CASE WHEN r.ProcedureDescList LIKE ? OR r.ProcedureCodeList LIKE ? THEN 1 ELSE 0 END AS desc_match,`
-            : '';
+        if (requestedProcTypeIds.length > 0) {
+            // Attending already disambiguated in a prior request.
+            const picked = await getProcTypesByIds(connection, requestedProcTypeIds);
+            if (picked.length === 0) {
+                await connection.end();
+                return NextResponse.json({ success: false, message: 'No matching procedures for the given proc_type_ids' }, { status: 400 });
+            }
+            canonicalProcDescs = picked.map(p => p.proc_desc);
+            matchedViaAlias = true;
+        } else if (q) {
+            const aliasResolution = await resolveProcedureAliasFromQuery(connection, q);
 
-        /// Actual order of `?` in the SQL text above, top to bottom:
-        // 1. desc_match CASE, part 1   (q)
-        // 2. desc_match CASE, part 2   (q)
-        // 3. seek_feedback subquery 1  (traineeId)
-        // 4. seek_feedback subquery 2  (traineeId)
-        // 5. WHERE rp.user_id          (traineeId)
-        // 6-8. searchClause            (q, q, q)
+            if (aliasResolution.ambiguous.length > 0) {
+                // Short-circuit: don't run the procedure query at all yet — ask
+                // the attending to pick first, same UX pattern as an ambiguous
+                // trainee-name resolution.
+                await connection.end();
+                return NextResponse.json({
+                    success: true,
+                    disambiguation: {
+                        query: q,
+                        matchedAlias: aliasResolution.matchedAlias,
+                        candidates: aliasResolution.ambiguous.map(m => ({
+                            proc_type_id: m.procedure.proc_type_id,
+                            proc_desc: m.procedure.proc_desc,
+                            proc_code: m.procedure.proc_code,
+                            proc_cat: m.procedure.proc_cat,
+                        })),
+                    },
+                });
+            }
 
+            if (aliasResolution.resolved) {
+                canonicalProcDescs = aliasResolution.resolved.map(p => p.proc_desc);
+                matchedViaAlias = true;
+            }
+        }
+
+        // searchClause now only ever touches ProcedureDescList / ProcedureCodeList.
+        // Two shapes:
+        //   - alias resolved (one or more canonical proc_desc values): exact-ish
+        //     match against those specific descriptions.
+        //   - no alias match: fall back to a direct LIKE on the raw query text.
+        let searchClause = '';
+        let descMatchSelect = '';
         const procedureParams: any[] = [];
-        if (q) procedureParams.push(`%${q}%`, `%${q}%`);
+
+        if (matchedViaAlias && canonicalProcDescs.length > 0) {
+            const descPlaceholders = canonicalProcDescs.map(() => '?').join(', ');
+            searchClause = `AND r.ProcedureDescList IN (${descPlaceholders})`;
+            descMatchSelect = `1 AS desc_match,`;
+        } else if (q) {
+            searchClause = `AND (r.ProcedureDescList LIKE ? OR r.ProcedureCodeList LIKE ?)`;
+            descMatchSelect = `CASE WHEN r.ProcedureDescList LIKE ? OR r.ProcedureCodeList LIKE ? THEN 1 ELSE 0 END AS desc_match,`;
+        }
+
+        /// Actual order of `?` in the SQL text below, top to bottom:
+        // 1-N. canonicalProcDescs IN (...) for descMatchSelect [alias path], OR
+        //      desc_match CASE q/q                              [fallback path]
+        // next. seek_feedback subquery 1  (traineeId)
+        // next. seek_feedback subquery 2  (traineeId)
+        // next. WHERE rp.user_id          (traineeId)
+        // next. searchClause params       (canonicalProcDescs[] OR q, q)
+
+        if (matchedViaAlias && canonicalProcDescs.length > 0) {
+        // descMatchSelect has no IN() — it's hardcoded as `1 AS desc_match` — no params needed
+        } else if (q) {
+            procedureParams.push(`%${q}%`, `%${q}%`); // descMatchSelect CASE
+        }
         procedureParams.push(traineeId, traineeId, traineeId);
-        if (q) procedureParams.push(`%${q}%`, `%${q}%`, `${q}*`);
+        if (matchedViaAlias && canonicalProcDescs.length > 0) {
+            procedureParams.push(...canonicalProcDescs); // searchClause IN(...) — spread, not array
+        } else if (q) {
+            procedureParams.push(`%${q}%`, `%${q}%`); // searchClause LIKE/LIKE
+        }
 
         const [procedures] = await connection.execute(
             `SELECT
@@ -92,7 +168,7 @@ export async function GET(req: NextRequest, context: any) {
                 r.ProcedureDescList AS proc_desc,
                 REPLACE(NULLIF(TRIM(r.ProcedureCodeList), ''), ';', ', ') AS proc_code,
                 es.epa_score AS oepa,
-                r.complexity AS complexity,
+                pt.complexity AS complexity,
                 r.Attending AS raw_attending,
                 r.Trainee AS raw_trainee,
                 CONCAT(u_tr.first_name, ' ', u_tr.last_name) AS trainee_name,
@@ -118,6 +194,11 @@ export async function GET(req: NextRequest, context: any) {
             JOIN reports r ON r.ReportID = rp.report_id
             JOIN users u_tr ON u_tr.user_id = rp.user_id
             LEFT JOIN epa_scores es ON es.report_participant_id = rp.id
+            -- complexity now lives on proc_types, not reports — join by the same
+            -- normalized-text match the import script used (ProcedureCodeList
+            -- isn't a reliable join key yet, so this stays a text match rather
+            -- than an id join).
+            LEFT JOIN proc_types pt ON UPPER(TRIM(r.ProcedureDescList)) = UPPER(TRIM(pt.proc_desc))
             WHERE rp.user_id = ?
             AND rp.role = 'trainee'
             ${searchClause}
@@ -157,6 +238,7 @@ export async function GET(req: NextRequest, context: any) {
 
         return NextResponse.json({ success: true, user, procedures, stats: formattedStats });
     } catch (err) {
+        console.error('ROUTE ERROR:', err);  // add this line
         return NextResponse.json({ success: false, message: 'Server error', error: (err as Error).message }, { status: 500 });
     }
 }

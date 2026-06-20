@@ -28,7 +28,6 @@ interface ReportDetailRow {
     report_id: string;
     create_date: string | null;
     procedure_desc: string | null;
-    complexity: number;
     attending_user_id: number;
     trainee_user_id: number;
     trainee_first_name: string;
@@ -153,7 +152,6 @@ export async function GET(req: NextRequest) {
                 r.ReportID                  AS report_id,
                 r.CreateDate                AS create_date,
                 r.ProcedureDescList         AS procedure_desc,
-                r.complexity,
                 rp_att.user_id              AS attending_user_id,
                 rp_trainee.user_id          AS trainee_user_id,
                 u_trainee.first_name        AS trainee_first_name,
@@ -185,7 +183,6 @@ export async function GET(req: NextRequest) {
                 r.ReportID,
                 r.CreateDate,
                 r.ProcedureDescList,
-                r.complexity,
                 rp_att.user_id,
                 rp_trainee.user_id,
                 u_trainee.first_name,
@@ -236,7 +233,6 @@ export async function GET(req: NextRequest) {
             report_id: string;
             create_date: string | null;
             procedure_desc: string | null;
-            complexity: number;
             trainee: {
                 user_id: number;
                 name: string;
@@ -254,7 +250,6 @@ export async function GET(req: NextRequest) {
                 report_id: row.report_id,
                 create_date: row.create_date,
                 procedure_desc: row.procedure_desc,
-                complexity: row.complexity,
                 trainee: {
                     user_id: row.trainee_user_id,
                     name: row.trainee_preferred_name

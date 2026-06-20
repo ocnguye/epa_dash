@@ -19,7 +19,7 @@ export interface ProcedureRecord {
   proc_desc: string | null;
   proc_code: string | null;
   oepa: number | null;
-  complexity?: string | null;
+  complexity?: number | null;
   // present only when the request included `q`: 1 if proc_desc/proc_code matched,
   // 0 if the row only matched via ContentText full-text search
   desc_match?: number;
@@ -48,9 +48,117 @@ export interface TraineeDetail {
 export interface CohortProcedureItem {
   desc: string;
   code: string;
+  complexity?: number | null;
   avg_epa: number;
   count: number;       // scored cases (contributes to avg_epa)
   totalCount: number;  // all cases for this procedure, scored or not
+}
+
+// ---------------- alias resolution ----------------
+//
+// Bridges colloquial attending language ("g tube", "para", "PICC") to the
+// formal proc_desc values that actually live in ProcedureDescList. This
+// replaces ContentText full-text search as the mechanism for catching
+// shorthand — alias lookups are precise (backed by the proc_aliases /
+// proc_type_aliases tables), where FULLTEXT scoring over free dictation
+// text was not (e.g. "g tube" surfacing an unrelated adrenal vein sampling
+// report purely on incidental token overlap).
+//
+// Mirrors the shape of TraineeResolution/TraineeMatch on purpose: a query
+// can resolve to zero, one, or many candidate procedures, and the "many"
+// case should prompt the attending the same way an ambiguous trainee name
+// does, rather than silently aggregating or guessing.
+
+export interface ProcedureTypeCandidate {
+  proc_type_id: number;
+  proc_code: string;
+  proc_desc: string;
+  proc_cat: string | null;
+}
+
+// One row per (alias, proc_type) link — the shape returned by a join across
+// proc_aliases -> proc_type_aliases -> proc_types for a given alias text.
+export interface AliasLookupRow {
+  alias: string;
+  proc_type_id: number;
+  proc_code: string;
+  proc_desc: string;
+  proc_cat: string | null;
+}
+
+export interface ProcedureMatch {
+  procedure: ProcedureTypeCandidate;
+  matchedAlias: string;
+}
+
+export interface ProcedureAliasResolution {
+  // Exactly one candidate procedure matched the alias — safe to query directly.
+  resolved: ProcedureTypeCandidate[] | null;
+  // The alias matched, but to more than one procedure — caller should
+  // prompt the attending to choose before running any query.
+  ambiguous: ProcedureMatch[];
+  // No alias matched at all — caller should fall back to a direct
+  // ProcedureDescList / ProcedureCodeList text match on the raw query.
+  matchedAlias: string | null;
+}
+
+// `rows` is the full set of (alias, proc_type) links for the aliases the
+// caller looked up (typically: every alias whose text appears in the query).
+// Grouping happens here so the caller's SQL can stay a simple join with no
+// GROUP_CONCAT gymnastics.
+export function resolveProcedureAlias(query: string, rows: AliasLookupRow[]): ProcedureAliasResolution {
+  if (rows.length === 0) return { resolved: null, ambiguous: [], matchedAlias: null };
+
+  // If multiple distinct alias strings matched within the query (e.g. both
+  // "chest tube" and "tube" partially overlap), prefer the longest one —
+  // same "most specific wins" principle as the last-name anchor above.
+  const byAliasLength = Array.from(new Set(rows.map(r => r.alias))).sort((a, b) => b.length - a.length);
+  const chosenAlias = byAliasLength[0];
+
+  const matchingRows = rows.filter(r => r.alias === chosenAlias);
+  const candidates: ProcedureTypeCandidate[] = matchingRows.map(r => ({
+    proc_type_id: r.proc_type_id,
+    proc_code: r.proc_code,
+    proc_desc: r.proc_desc,
+    proc_cat: r.proc_cat,
+  }));
+
+  // De-dupe in case the same proc_type came back twice (shouldn't happen
+  // given the junction table's composite PK, but cheap to guard).
+  const uniqueCandidates = Array.from(new Map(candidates.map(c => [c.proc_type_id, c])).values());
+
+  if (uniqueCandidates.length === 1) {
+    return { resolved: uniqueCandidates, ambiguous: [], matchedAlias: chosenAlias };
+  }
+
+  return {
+    resolved: null,
+    ambiguous: uniqueCandidates.map(c => ({ procedure: c, matchedAlias: chosenAlias })),
+    matchedAlias: chosenAlias,
+  };
+}
+
+// Shape returned by trainee-detail / cohortproc routes when an alias query
+// matches more than one procedure. The client should present `candidates`
+// as a pick list (checkboxes, since the attending may want to aggregate
+// across more than one — e.g. both CT and US paracentesis), then resubmit
+// the original request with `proc_type_ids` set to the chosen id(s).
+export interface DisambiguationResponse {
+  success: true;
+  disambiguation: {
+    query: string;
+    matchedAlias: string | null;
+    candidates: {
+      proc_type_id: number;
+      proc_desc: string;
+      proc_code: string;
+      proc_cat: string | null;
+    }[];
+  };
+}
+
+export function isDisambiguationResponse(body: any): body is DisambiguationResponse {
+  return !!body && body.success === true && !!body.disambiguation && Array.isArray(body.disambiguation.candidates);
 }
 
 // ---------------- text utils ----------------
@@ -391,11 +499,16 @@ export function filterCohortByPhrase(records: CohortProcedureItem[], phrase: str
   return records.filter(r => recordMatchesPhrase(`${r.desc} ${r.code}`, phrase));
 }
 
-// ---------------- description-first / content-text-fallback partitioning ----------------
-// The server already filtered `records` down to rows matching the phrase (via proc_desc,
-// proc_code, or ContentText full-text search). This splits them: if any row matched on the
-// formal procedure fields, those are treated as the authoritative set; only when there are
-// NONE do we trust the ContentText-only matches.
+// ---------------- description-match partitioning ----------------
+// Historically this split server results into proc_desc/proc_code matches
+// vs ContentText-only matches. The trainee-detail route no longer queries
+// ContentText at all (alias resolution + direct ProcedureDescList/
+// ProcedureCodeList matching replaced it), so in practice every row coming
+// back now has desc_match === 1 whenever `q` was sent. This is kept as a
+// defensive partition rather than removed outright — a record without a
+// usable desc_match flag (e.g. q wasn't sent) still falls through the
+// 'unscoped' branch below, and if a ContentText fallback is ever
+// reintroduced for some other caller, this keeps working unchanged.
 
 export function partitionByDescMatch(records: ProcedureRecord[]): {
   descMatches: ProcedureRecord[];

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mysql from 'mysql2/promise';
+import { resolveProcedureAliasFromQuery, getProcTypesByIds } from '@/lib/procAliasLookup';
 
 const getConnection = async () => mysql.createConnection({
     host: process.env.AWS_RDS_HOST,
@@ -31,7 +32,75 @@ export async function GET(req: NextRequest) {
         const pgyParam = searchParams.get('pgy');
         const pgy = pgyParam ? Number(pgyParam) : null;
 
-        // Mirror the exact same EPA score subquery used in the trainee drill-down
+        // Optional: same alias-aware narrowing as the trainee-detail route, so
+        // a colloquial query ("para", "g tube") can scope the cohort breakdown
+        // server-side instead of always returning every procedure and relying
+        // on filterCohortByPhrase client-side. Existing callers that omit `q`
+        // get the original unscoped behavior, unchanged.
+        const q = searchParams.get('q')?.trim() || null;
+        const procTypeIdsParam = searchParams.get('proc_type_ids');
+        const requestedProcTypeIds = procTypeIdsParam
+            ? procTypeIdsParam.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0)
+            : [];
+
+        let canonicalProcDescs: string[] = [];
+        let matchedViaAlias = false;
+
+        if (requestedProcTypeIds.length > 0) {
+            const picked = await getProcTypesByIds(connection, requestedProcTypeIds);
+            if (picked.length === 0) {
+                await connection.end();
+                return NextResponse.json({ success: false, message: 'No matching procedures for the given proc_type_ids' }, { status: 400 });
+            }
+            canonicalProcDescs = picked.map(p => p.proc_desc);
+            matchedViaAlias = true;
+        } else if (q) {
+            const aliasResolution = await resolveProcedureAliasFromQuery(connection, q);
+
+            if (aliasResolution.ambiguous.length > 0) {
+                await connection.end();
+                return NextResponse.json({
+                    success: true,
+                    disambiguation: {
+                        query: q,
+                        matchedAlias: aliasResolution.matchedAlias,
+                        candidates: aliasResolution.ambiguous.map(m => ({
+                            proc_type_id: m.procedure.proc_type_id,
+                            proc_desc: m.procedure.proc_desc,
+                            proc_code: m.procedure.proc_code,
+                            proc_cat: m.procedure.proc_cat,
+                        })),
+                    },
+                });
+            }
+
+            if (aliasResolution.resolved) {
+                canonicalProcDescs = aliasResolution.resolved.map(p => p.proc_desc);
+                matchedViaAlias = true;
+            }
+        }
+
+        // Scope clause: only ever ProcedureDescList / ProcedureCodeList — no
+        // ContentText, matching how this endpoint already behaved before any
+        // of this change. Alias-resolved queries scope to the exact canonical
+        // description(s); an unresolved free-text query falls back to LIKE
+        // against the same two columns the import script populated.
+        let scopeClause = '';
+        const scopeParams: any[] = [];
+
+        if (matchedViaAlias && canonicalProcDescs.length > 0) {
+            const placeholders = canonicalProcDescs.map(() => '?').join(', ');
+            scopeClause = `AND r.ProcedureDescList IN (${placeholders})`;
+            scopeParams.push(...canonicalProcDescs);
+        } else if (q) {
+            scopeClause = `AND (r.ProcedureDescList LIKE ? OR r.ProcedureCodeList LIKE ?)`;
+            scopeParams.push(`%${q}%`, `%${q}%`);
+        }
+
+        // Mirror the exact same EPA score subquery used in the trainee drill-down.
+        // complexity now comes from proc_types (procedure-level), not r.complexity
+        // (report-level) — joined the same normalized-text way the trainee-detail
+        // route does, since ProcedureCodeList isn't a reliable join key yet.
         const query = `
             SELECT
                 r.ProcedureDescList AS proc_desc,
@@ -43,6 +112,7 @@ export async function GET(req: NextRequest) {
                     WHERE rp2.report_id = r.ReportID AND rp2.role = 'trainee'
                     LIMIT 1
                 ) AS oepa,
+                pt.complexity AS complexity,
                 u.pgy
             FROM reports r
             JOIN users u ON (
@@ -50,16 +120,21 @@ export async function GET(req: NextRequest) {
                 OR r.trainee = CONCAT(u.first_name, ' ', u.last_name)
                 OR r.trainee = u.username
             )
+            LEFT JOIN proc_types pt ON UPPER(TRIM(r.ProcedureDescList)) = UPPER(TRIM(pt.proc_desc))
             WHERE u.role = 'trainee'
               ${pgy !== null ? 'AND u.pgy = ?' : ''}
+              ${scopeClause}
         `;
-        const params: any[] = pgy !== null ? [pgy] : [];
+        const params: any[] = [
+            ...(pgy !== null ? [pgy] : []),
+            ...scopeParams,
+        ];
 
         const [rows] = await connection.execute(query, params) as any[];
         await connection.end();
 
         // Aggregate per procedure — same logic as the component's useMemo
-        const statsMap: Record<string, { desc: string; code: string; sum: number; count: number; totalCount: number }> = {};
+        const statsMap: Record<string, { desc: string; code: string; complexity: number | null; sum: number; count: number; totalCount: number }> = {};
 
         for (const row of rows) {
             const desc = row.proc_desc ? String(row.proc_desc).trim() : '';
@@ -67,7 +142,14 @@ export async function GET(req: NextRequest) {
             const key = desc || code || 'Unknown';
 
             if (!statsMap[key]) {
-                statsMap[key] = { desc: desc || code || 'Unknown', code, sum: 0, count: 0, totalCount: 0 };
+                statsMap[key] = {
+                    desc: desc || code || 'Unknown',
+                    code,
+                    complexity: row.complexity !== null && typeof row.complexity !== 'undefined' ? Number(row.complexity) : null,
+                    sum: 0,
+                    count: 0,
+                    totalCount: 0,
+                };
             }
             statsMap[key].totalCount += 1;
 
@@ -81,6 +163,7 @@ export async function GET(req: NextRequest) {
         const procedures = Object.values(statsMap).map(s => ({
             desc: s.desc,
             code: s.code,
+            complexity: s.complexity,
             avg_epa: s.count > 0 ? Number((s.sum / s.count).toFixed(2)) : 0,
             count: s.count,
             totalCount: s.totalCount,

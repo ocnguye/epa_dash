@@ -57,7 +57,6 @@ export async function GET(req: NextRequest) {
                 r.fluoroscopy_dose_value AS fluoroscopy_dose_value,
                 r.fluoroscopy_dose_unit AS fluoroscopy_dose_unit,
                 es.epa_score AS oepa,
-                r.complexity AS complexity,
                 r.Attending AS raw_attending,
                 r.Trainee AS raw_trainee,
                 CONCAT(u_tr.first_name, ' ', u_tr.last_name) AS trainee_name,

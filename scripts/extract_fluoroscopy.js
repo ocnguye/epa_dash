@@ -19,8 +19,10 @@ const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 
 function getRdsConfig() {
-  const host = process.env.AWS_RDS_HOST, user = process.env.AWS_RDS_USER,
-        password = process.env.AWS_RDS_PWD, database = process.env.AWS_RDS_DB,
+  const host = process.env.AWS_RDS_HOST, 
+        user = process.env.AWS_RDS_USER,
+        password = process.env.AWS_RDS_PWD, 
+        database = process.env.AWS_RDS_DB,
         port = Number(process.env.AWS_RDS_PORT || 3306);
   if (!host || !user || !password || !database)
     throw new Error('Missing env vars: AWS_RDS_HOST, AWS_RDS_USER, AWS_RDS_PWD, AWS_RDS_DB');

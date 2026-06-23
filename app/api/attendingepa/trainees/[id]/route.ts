@@ -47,6 +47,8 @@ export async function GET(req: NextRequest, context: any) {
             ? procTypeIdsParam.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0)
             : [];
 
+        const exactDesc = searchParams.get('exact_desc')?.trim() || null;
+
         const [userRows] = await connection.execute(
             `SELECT user_id, username, first_name, last_name, preferred_name, pgy, role FROM users WHERE user_id = ?`,
             [traineeId]
@@ -85,7 +87,12 @@ export async function GET(req: NextRequest, context: any) {
         let canonicalProcDescs: string[] = [];
         let matchedViaAlias = false;
 
-        if (requestedProcTypeIds.length > 0) {
+        if (exactDesc) {
+            // Clicked a known procedure label — skip alias resolution entirely.
+            // Direct equality match against ProcedureDescList.
+            canonicalProcDescs = [exactDesc];
+            matchedViaAlias = true;
+        } else if (requestedProcTypeIds.length > 0) {
             // Attending already disambiguated in a prior request.
             const picked = await getProcTypesByIds(connection, requestedProcTypeIds);
             if (picked.length === 0) {

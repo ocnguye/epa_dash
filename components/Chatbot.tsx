@@ -7,10 +7,68 @@ import {
   ProcedureGroupSummary, resolveTrainee, filterCohortByPhrase, extractPgyFilter, pickMatchSet,
   buildProcedureDrilldown, topProcedureBreakdown, topCohortProcedureBreakdown, aggregateCohort,
   displayName, Trend, summarizeProcedureGroups, summarizeCohortGroups, isDisambiguationResponse,
-  ProcedureTypeCandidate,
+  ProcedureTypeCandidate, normalize, recordMatchesPhrase,
 } from '@/lib/epaChatbotEngine';
 
 type MatchSource = 'description' | 'dictation' | 'unscoped';
+
+// ─── Relevant procedure suggestions ──────────────────────────────────────────
+//
+// When a search phrase finds nothing for a trainee, surface procedures from
+// their history that are *related* to what was typed rather than just their
+// most frequent ones. Three passes, progressively looser:
+//
+//   Pass 1 — recordMatchesPhrase: same logic used for cohort filtering.
+//             "paracentesis" matches "US GUIDED PARACENTESIS" etc.
+//   Pass 2 — shared meaningful token: "para" shares no full token with
+//             "PARACENTESIS" but "drain" shares a token with "DRAIN PLACEMENT".
+//   Pass 3 — prefix on any token: "neph" is a prefix of "NEPHROSTOMY".
+//   Fallback — top by frequency if nothing related found.
+//
+// The UI shows a different header depending on whether the results are
+// related ("You might be looking for:") or unrelated ("On file for this
+// trainee — tap to view:").
+
+const MIN_TOKEN_LEN = 3;
+
+function engTokenize(s: string): string[] {
+  return normalize(s).split(' ').filter(t => t.length >= MIN_TOKEN_LEN);
+}
+
+function sharesToken(label: string, phrase: string): boolean {
+  const labelToks = new Set(engTokenize(label));
+  return engTokenize(phrase).some(t => labelToks.has(t));
+}
+
+function prefixOverlap(label: string, phrase: string): boolean {
+  const lt = engTokenize(label);
+  const pt = engTokenize(phrase);
+  return lt.some(l => pt.some(p => l.startsWith(p) || p.startsWith(l)));
+}
+
+interface SuggestionResult {
+  items: { label: string; count: number; avg: number | null }[];
+  related: boolean; // true = suggestions are semantically related to the phrase
+}
+
+function relevantProcedureSuggestions(
+  phrase: string,
+  baseline: TraineeDetail,
+  topN = 5,
+): SuggestionResult {
+  const all = topProcedureBreakdown(baseline.procedures, 999);
+
+  const pass1 = all.filter(p => recordMatchesPhrase(p.label, phrase));
+  if (pass1.length > 0) return { items: pass1.slice(0, topN), related: true };
+
+  const pass2 = all.filter(p => sharesToken(p.label, phrase));
+  if (pass2.length > 0) return { items: pass2.slice(0, topN), related: true };
+
+  const pass3 = all.filter(p => prefixOverlap(p.label, phrase));
+  if (pass3.length > 0) return { items: pass3.slice(0, topN), related: true };
+
+  return { items: topProcedureBreakdown(baseline.procedures, topN), related: false };
+}
 
 // ─── Message types ────────────────────────────────────────────────────────────
 
@@ -23,14 +81,13 @@ type ChatMessage =
       candidates: ProcedureTypeCandidate[];
       matchedAlias: string | null;
       originalQuery: string;
-      // Context needed to re-run the original request after the user picks
-      trainee: TraineeListItem | null;   // null = cohort-only query
+      trainee: TraineeListItem | null;
       pendingPgy: number | null;
     }
   | { id: string; role: 'bot'; kind: 'trainee-overview'; trainee: TraineeListItem; detail: TraineeDetail }
   | { id: string; role: 'bot'; kind: 'procedure-drilldown'; trainee: TraineeListItem; drilldown: ProcedureDrilldown; matchSource: MatchSource; cohortAvg: { avg: number | null; count: number; totalCount: number } | null; pgyUsed: number | null; groupSummary: ProcedureGroupSummary }
   | { id: string; role: 'bot'; kind: 'cohort-only'; groupSummary: ProcedureGroupSummary; cohortAvg: { avg: number | null; count: number; totalCount: number }; pgyUsed: number | null }
-  | { id: string; role: 'bot'; kind: 'no-match'; trainee: TraineeListItem; traineeName: string; phrase: string; pgyUsed: number | null; knownProcedures: { label: string; count: number; avg: number | null }[] }
+  | { id: string; role: 'bot'; kind: 'no-match'; trainee: TraineeListItem; traineeName: string; phrase: string; pgyUsed: number | null; suggestions: SuggestionResult }
   | { id: string; role: 'bot'; kind: 'cohort-no-match'; phrase: string; pgyUsed: number | null; knownProcedures: { label: string; count: number; avg: number | null }[] };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -47,11 +104,16 @@ const TREND_LABEL: Record<Trend, { label: string; icon: string; color: string }>
 
 const SUGGESTIONS = ['Moon, G-tube', 'Hanzhou Li, Thrombectomy', 'PGY 2 Paracentesis'];
 
-function noMatchMessage(trainee: TraineeListItem, baseline: TraineeDetail, remainder: string, pgyUsed: number | null): ChatMessage {
+function noMatchMessage(
+  trainee: TraineeListItem,
+  baseline: TraineeDetail,
+  remainder: string,
+  pgyUsed: number | null,
+): ChatMessage {
   return {
     id: uid(), role: 'bot', kind: 'no-match',
     trainee, traineeName: displayName(trainee), phrase: remainder, pgyUsed,
-    knownProcedures: topProcedureBreakdown(baseline.procedures, 5),
+    suggestions: relevantProcedureSuggestions(remainder, baseline),
   };
 }
 
@@ -100,20 +162,13 @@ export default function Chatbot() {
     return data.trainees;
   }
 
-  /**
-   * Fetches trainee detail, optionally scoped by procedure phrase or explicit
-   * proc_type_ids (post-disambiguation). Returns the raw response body so the
-   * caller can inspect it for a `disambiguation` payload before treating it as
-   * a TraineeDetail.
-   */
   async function fetchTraineeDetail(
     id: number,
-    opts: { phrase?: string; procTypeIds?: number[] } = {},
+    opts: { phrase?: string; procTypeIds?: number[]; exactDesc?: string } = {},
   ): Promise<{ raw: any; detail?: TraineeDetail }> {
-    const { phrase, procTypeIds } = opts;
+    const { phrase, procTypeIds, exactDesc } = opts;
     const trimmed = phrase?.trim();
 
-    // Build cache key and URL
     let cacheKey: string;
     let url: string;
 
@@ -121,6 +176,11 @@ export default function Chatbot() {
       const idsStr = procTypeIds.sort().join(',');
       cacheKey = `${id}::ids:${idsStr}`;
       url = `/api/attendingepa/trainees/${id}?proc_type_ids=${encodeURIComponent(idsStr)}`;
+    } else if (exactDesc?.trim()) {
+      // Exact ProcedureDescList match — bypasses alias resolution entirely.
+      // Used when the attending clicks a known procedure label from the no-match list.
+      cacheKey = `${id}::exact:${exactDesc.trim().toLowerCase()}`;
+      url = `/api/attendingepa/trainees/${id}?exact_desc=${encodeURIComponent(exactDesc.trim())}`;
     } else if (trimmed) {
       cacheKey = `${id}::${trimmed.toLowerCase()}`;
       url = `/api/attendingepa/trainees/${id}?q=${encodeURIComponent(trimmed)}`;
@@ -135,9 +195,7 @@ export default function Chatbot() {
     const res = await fetch(url, { credentials: 'include' });
     const data = await res.json();
 
-    // Disambiguation response — do NOT cache; return raw for caller to handle
     if (isDisambiguationResponse(data)) return { raw: data };
-
     if (!data.success) throw new Error(data.message || 'Failed to load trainee detail');
 
     const detail: TraineeDetail = { user: data.user, procedures: data.procedures, stats: data.stats };
@@ -179,7 +237,6 @@ export default function Chatbot() {
     return { raw: data, procedures: data.procedures };
   }
 
-  /** Loads unscoped cohort vocab (used for cohort-avg lookup and fallback no-match lists). */
   async function loadCohortVocab(pgy: number | null): Promise<CohortProcedureItem[]> {
     const result = await fetchCohortProc(pgy);
     if (!result.procedures) throw new Error('Failed to load cohort vocab');
@@ -193,6 +250,7 @@ export default function Chatbot() {
     remainder: string,
     explicitPgy: number | null,
     procTypeIds?: number[],
+    exactDesc?: string,
   ) {
     const baseline = await fetchTraineeDetail(trainee.user_id);
     if (!baseline.detail) throw new Error('Failed to load trainee baseline');
@@ -202,13 +260,12 @@ export default function Chatbot() {
       return;
     }
 
-    // Fetch filtered / scoped detail
     const filtered = await fetchTraineeDetail(trainee.user_id, {
-      phrase: procTypeIds?.length ? undefined : remainder,
+      phrase: (procTypeIds?.length || exactDesc) ? undefined : remainder,
       procTypeIds,
+      exactDesc,
     });
 
-    // Disambiguation needed — server returned candidates
     if (filtered.raw && isDisambiguationResponse(filtered.raw)) {
       append({
         id: uid(), role: 'bot', kind: 'ambiguous-procedure',
@@ -242,9 +299,7 @@ export default function Chatbot() {
 
     const drilldown = buildProcedureDrilldown(matched, groupSummary.label);
     const cohortAvg = aggregateCohort(
-      procTypeIds?.length
-        ? cohort  // already scoped by IDs — aggregate whole filtered cohort
-        : filterCohortByPhrase(cohort, remainder),
+      procTypeIds?.length ? cohort : filterCohortByPhrase(cohort, remainder),
     );
 
     append({
@@ -264,7 +319,6 @@ export default function Chatbot() {
       procTypeIds,
     });
 
-    // Disambiguation needed
     if (result.raw && isDisambiguationResponse(result.raw)) {
       append({
         id: uid(), role: 'bot', kind: 'ambiguous-procedure',
@@ -280,8 +334,6 @@ export default function Chatbot() {
     const procedures = result.procedures;
     if (!procedures) throw new Error('Failed to load cohort procedures');
 
-    // For procTypeIds path the server already scoped to matching procedures;
-    // for free-text path we filter client-side like before
     const matches = procTypeIds?.length ? procedures : filterCohortByPhrase(procedures, remainder);
 
     if (matches.length === 0) {
@@ -352,7 +404,6 @@ export default function Chatbot() {
     }
   }
 
-  /** Called when the attending confirms their multi-select procedure pick. */
   async function handleProcedureDisambiguationSubmit(
     msg: Extract<ChatMessage, { kind: 'ambiguous-procedure' }>,
     selectedIds: number[],
@@ -375,7 +426,9 @@ export default function Chatbot() {
   async function handleKnownProcedurePick(trainee: TraineeListItem, label: string, pgyUsed: number | null) {
     setLoading(true);
     try {
-      await respondForTrainee(trainee, label, pgyUsed);
+      // Pass label as exactDesc so it goes straight to a ProcedureDescList = ?
+      // match on the server, bypassing alias resolution entirely.
+      await respondForTrainee(trainee, label, pgyUsed, undefined, label);
     } catch (e: any) {
       append({ id: uid(), role: 'bot', kind: 'error', text: e?.message || 'Something went wrong fetching that data.' });
     } finally {
@@ -481,8 +534,7 @@ export default function Chatbot() {
 type AmbiguousProcedureMsg = Extract<ChatMessage, { kind: 'ambiguous-procedure' }>;
 
 function ProcedureDisambiguationCard({
-  msg,
-  onSubmit,
+  msg, onSubmit,
 }: {
   msg: AmbiguousProcedureMsg;
   onSubmit: (msg: AmbiguousProcedureMsg, selectedIds: number[]) => void;
@@ -522,12 +574,9 @@ function ProcedureDisambiguationCard({
               onClick={() => !submitted && toggle(c.proc_type_id)}
               disabled={submitted}
               className={`flex w-full items-start gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors
-                ${checked
-                  ? 'border-slate-400 bg-slate-100 text-slate-800'
-                  : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}
+                ${checked ? 'border-slate-400 bg-slate-100 text-slate-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}
                 ${submitted ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
             >
-              {/* Checkbox indicator */}
               <span className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${checked ? 'border-slate-500 bg-slate-500' : 'border-slate-300 bg-white'}`}>
                 {checked && (
                   <svg viewBox="0 0 10 8" className="h-2 w-2 text-white" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -641,11 +690,8 @@ function CohortOnlyCard({ msg }: { msg: CohortOnlyMessage }) {
 // ─── Message bubble dispatcher ───────────────────────────────────────────────
 
 function MessageBubble({
-  msg,
-  onPickAmbiguousTrainee,
-  onProcedureDisambiguationSubmit,
-  onSelectKnownProcedure,
-  onSelectCohortProcedure,
+  msg, onPickAmbiguousTrainee, onProcedureDisambiguationSubmit,
+  onSelectKnownProcedure, onSelectCohortProcedure,
 }: {
   msg: ChatMessage;
   onPickAmbiguousTrainee: (c: TraineeMatch, remainder: string, pgy: number | null) => void;
@@ -685,12 +731,7 @@ function MessageBubble({
       );
 
     case 'ambiguous-procedure':
-      return (
-        <ProcedureDisambiguationCard
-          msg={msg}
-          onSubmit={onProcedureDisambiguationSubmit}
-        />
-      );
+      return <ProcedureDisambiguationCard msg={msg} onSubmit={onProcedureDisambiguationSubmit} />;
 
     case 'trainee-overview': {
       const { trainee, detail } = msg;
@@ -751,14 +792,21 @@ function MessageBubble({
         </Card>
       );
 
-    case 'no-match':
+    case 'no-match': {
+      const { suggestions } = msg;
+      const header = suggestions.related
+        ? `No "${msg.phrase}" on record — did you mean:`
+        : `No "${msg.phrase}" cases for ${msg.traineeName}`;
+      const subheader = suggestions.related
+        ? null
+        : suggestions.items.length > 0 ? 'On file for this trainee — tap to view:' : null;
       return (
         <Card>
-          <CardTitle>No "{msg.phrase}" cases for {msg.traineeName}</CardTitle>
-          {msg.knownProcedures.length > 0 && (
+          <CardTitle>{header}</CardTitle>
+          {subheader && <p className="text-xs text-slate-500">{subheader}</p>}
+          {suggestions.items.length > 0 && (
             <div className="space-y-1">
-              <p className="text-xs text-slate-500">On file for this trainee — tap to view:</p>
-              {msg.knownProcedures.map(p =>
+              {suggestions.items.map(p =>
                 p.label === 'Unknown' ? (
                   <div key={p.label} className="flex justify-between text-xs text-slate-500">
                     <span className="truncate pr-2">{p.label}</span>
@@ -771,7 +819,9 @@ function MessageBubble({
                     className="flex w-full items-center justify-between rounded-lg px-1 py-0.5 text-left text-xs text-slate-600 hover:bg-slate-50"
                   >
                     <span className="truncate pr-2">{p.label}</span>
-                    <span className="whitespace-nowrap text-slate-400">{p.count}×</span>
+                    <span className="whitespace-nowrap text-slate-400">
+                      {p.count}× {p.avg != null ? `· avg ${p.avg}` : ''}
+                    </span>
                   </button>
                 )
               )}
@@ -779,6 +829,7 @@ function MessageBubble({
           )}
         </Card>
       );
+    }
   }
 }
 

@@ -2,6 +2,7 @@
 
 /* Imports */
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { computeAdjustedEpa, type AdjustedEpaInput } from '@/lib/adjustedEpa';
 import  ProgressCircle from "@/components/ProgressCircle";
 import SeekFeedbackChart from "@/components/SeekFeedbackChart";
 import KeyPerformanceMetrics from "@/components/KeyPerformanceMetrics";
@@ -57,12 +58,15 @@ type Procedure = {
     report_id: number;
     create_date: string;
     proc_desc: string;
-    proc_code?: string; // ProcedureCodeList from the reports table
+    proc_code?: string;
     seek_feedback: 'not_required' | 'feedback_requested' | 'discussed';
     complexity: number;
     oepa: number;
     trainee_name: string;
     attending_name: string;
+    attending_user_id?: number;           // needed to look up evaluator stats
+    fluoroscopy_time_minutes?: number | null;
+    fluoroscopy_dose_value?: number | null;
 };
 
 type Stats = {
@@ -159,6 +163,9 @@ export default function Dashboard() {
     const tabs = ['EPA Trend', 'Procedure-Specific EPA', 'Procedure Counts'];
     const [procSortAsc, setProcSortAsc] = useState(true);
     const tabOverlap = 12; // pixels of overlap between adjacent tabs
+    const [evaluatorStats, setEvaluatorStats] = useState<Record<number, { mean: number; stdDev: number }>>({});
+    const [procedureMedians, setProcedureMedians] = useState<Record<string, { complexity: 1|2|3|4|5|null; fluoroTimeMedian: number|null; radiationDoseMedian: number|null }>>({});
+    const [adjustedStatsLoading, setAdjustedStatsLoading] = useState(true);
 
     useEffect(() => {
         const el = chartContainerRef.current;
@@ -229,7 +236,7 @@ export default function Dashboard() {
     const [profileError, setProfileError] = useState('');
     const [profileSuccess, setProfileSuccess] = useState('');
 
-    // Function to fetch dashboard data
+    // function to fetch dashboard data
     const fetchDashboard = async () => {
         setLoading(true);
         setError('');
@@ -244,6 +251,22 @@ export default function Dashboard() {
             setError(err.message || 'Error loading dashboard');
         }
         setLoading(false);
+    };
+
+    // fetch adjusted EPA stats for evaluator benchmarking and procedure-specific medians
+    const fetchAdjustedEpaStats = async () => {
+        setAdjustedStatsLoading(true);
+        try {
+            const res = await fetch('/api/adjustedEpaStats');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.evaluatorStats) setEvaluatorStats(data.evaluatorStats);
+            if (data.procedureMedians) setProcedureMedians(data.procedureMedians);
+        } catch (e) {
+            console.error('Failed to fetch adjusted EPA stats', e);
+        } finally {
+            setAdjustedStatsLoading(false);
+        }
     };
 
     // Fetch cohort average EPA for the selected procedure (or overall when proc not provided).
@@ -378,6 +401,7 @@ export default function Dashboard() {
 
     useEffect(() => {
         fetchDashboard();
+        fetchAdjustedEpaStats();
     }, []);
 
     // When the selected procedure filter changes, request a procedure-scoped cohort average
@@ -723,6 +747,41 @@ export default function Dashboard() {
             return { labels, counts, displayLabels };
         }
     }, [procedures, countsSelectedProcedure, countsGranularity]);
+
+    const adjustedEpaByReportId = useMemo(() => {
+        const map: Record<number, { eAdj: number; pw: number; cCase: number; zEval: number; zScore: number | null } | null> = {};
+        // ── TEMP DEBUG ──
+        console.log('=== adjustedEpaByReportId recompute ===');
+        console.log('procedures count:', procedures.length);
+        console.log('evaluatorStats keys:', Object.keys(evaluatorStats));
+        console.log('procedureMedians keys:', Object.keys(procedureMedians).slice(0, 10));
+        console.log('sample procedure[0]:', procedures[0]);
+        // ── END DEBUG ──
+        for (const proc of procedures) {
+            const procKey = proc.proc_code?.trim().toLowerCase() ?? '';
+            const procData = procedureMedians[procKey];
+            const evalData = proc.attending_user_id != null ? evaluatorStats[proc.attending_user_id] : undefined;
+
+            if (!procData && !evalData) {
+                map[proc.report_id] = null;
+                continue;
+            }
+
+            const result = computeAdjustedEpa({
+                eRaw: proc.oepa,
+                complexity: (procData?.complexity ?? null) as 1|2|3|4|5|null,
+                fluoroscopyTime: proc.fluoroscopy_time_minutes ?? null,
+                fluoroscopyTimeMedian: procData?.fluoroTimeMedian ?? null,
+                radiationDose: proc.fluoroscopy_dose_value ?? null,
+                radiationDoseMedian: procData?.radiationDoseMedian ?? null,
+                evaluatorMean: evalData?.mean ?? 0,
+                evaluatorStdDev: evalData?.stdDev ?? 0,
+            });
+
+            map[proc.report_id] = result;
+        }
+        return map;
+    }, [procedures, evaluatorStats, procedureMedians]);
 
     // dynamic EPA chart options adjusted based on selected timeframe
     const epaOptions = useMemo(() => {
@@ -1355,6 +1414,9 @@ export default function Dashboard() {
                                             <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}><strong>Trainee</strong></th>
                                             <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Description</th>
                                             <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>EPA</th>
+                                            <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>
+                                                Adj. EPA
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1378,6 +1440,59 @@ export default function Dashboard() {
                                                         {proc.oepa && Number(proc.oepa) > 0 ? proc.oepa : (
                                                             <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>—</span>
                                                         )}
+                                                    </td>
+                                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                                        {(() => {
+                                                            if (adjustedStatsLoading) {
+                                                                return <span style={{ color: '#9ca3af', fontSize: 12 }}>…</span>;
+                                                            }
+                                                            if (!proc.oepa || Number(proc.oepa) <= 0) {
+                                                                return <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>—</span>;
+                                                            }
+                                                            const adj = adjustedEpaByReportId[proc.report_id];
+                                                            if (!adj) {
+                                                                return <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>—</span>;
+                                                            }
+                                                            const delta = adj.eAdj - proc.oepa;
+                                                            const deltaStr = delta > 0.005
+                                                                ? `+${delta.toFixed(2)}`
+                                                                : delta < -0.005
+                                                                ? delta.toFixed(2)
+                                                                : '±0';
+
+                                                            // Build tooltip lines explicitly so null/undefined never bleeds in
+                                                            const tooltipLines = [
+                                                                `Raw EPA: ${proc.oepa}`,
+                                                                `Difficulty (Pw): +${adj.pw.toFixed(3)}`,
+                                                                `Complexity (Ccase): +${adj.cCase.toFixed(3)}`,
+                                                                `Evaluator bias (Zeval): ${adj.zEval >= 0 ? '+' : ''}${adj.zEval.toFixed(3)}`,
+                                                                adj.zScore != null
+                                                                    ? `Evaluator z-score: ${adj.zScore.toFixed(2)}`
+                                                                    : 'Evaluator correction not applied (insufficient history)',
+                                                            ];
+
+                                                            const isPositive = delta > 0.005;
+                                                            const isNegative = delta < -0.005;
+
+                                                            return (
+                                                                <div
+                                                                    title={tooltipLines.join('\n')}
+                                                                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'context-menu' }}
+                                                                >
+                                                                    <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                                                                        {adj.eAdj.toFixed(2)}
+                                                                    </span>
+                                                                    <span style={{
+                                                                        fontSize: 10,
+                                                                        fontWeight: 400,
+                                                                        opacity: 0.6,
+                                                                        color: isPositive ? '#166534' : isNegative ? '#991b1b' : '#6b7280',
+                                                                    }}>
+                                                                        {deltaStr}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </td>
                                                 </tr>
                                             ))

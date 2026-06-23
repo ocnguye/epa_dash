@@ -33,8 +33,8 @@ export default function AttendingCohortChart({
         'rgba(255, 226, 108, 0.6)', // PGY 3 — yellow
         'rgba(200, 230, 180, 0.6)', // PGY 4 — sage (yellow-green)
         'rgba(178, 211, 194, 0.6)', // PGY 5 — green
-        'rgba(200, 206, 238, 0.6)', // PGY 6 — lavender (blue-purple)
-        'rgba(175, 213, 240, 0.6)', // PGY 7 — blue
+        'rgba(175, 213, 240, 0.6)', // PGY 6 — blue
+        'rgba(200, 206, 238, 0.6)', // PGY 7 — lavender (blue-purple)
     ];
 
     const PGY_BORDERS = [
@@ -43,8 +43,8 @@ export default function AttendingCohortChart({
         '#ffe26c', // PGY 3 — yellow
         '#c8e6b4', // PGY 4 — sage
         '#b2d3c2', // PGY 5 — green
-        '#c8ceee', // PGY 6 — lavender
-        '#afd5f0', // PGY 7 — blue
+        '#afd5f0', // PGY 6 — blue
+        '#c8ceee', // PGY 7 — lavender
         ];
 
     // Compute reference line: cohort avg when PGY filter active, overall avg otherwise

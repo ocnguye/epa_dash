@@ -258,8 +258,10 @@ export default function ProcedureLogTable({
                                                 title={tooltipLines.join('\n')}
                                                 style={{
                                                     display: 'flex',
-                                                    flexDirection: 'column',
+                                                    flexDirection: 'row',    // ← was 'column'
                                                     alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: 4,                  // ← space between score and delta
                                                     cursor: 'context-menu',
                                                 }}
                                             >
@@ -268,14 +270,16 @@ export default function ProcedureLogTable({
                                                 </span>
                                                 <span
                                                     style={{
-                                                        fontSize: 10,
-                                                        fontWeight: 400,
-                                                        opacity: 0.6,
+                                                        fontSize: 9,         // ← smaller than before
+                                                        fontWeight: 500,
+                                                        opacity: 0.55,
                                                         color: isPositive
                                                             ? '#166534'
                                                             : isNegative
                                                             ? '#991b1b'
                                                             : '#6b7280',
+                                                        lineHeight: 1,
+                                                        marginTop: 1,        // ← nudges it onto the text baseline
                                                     }}
                                                 >
                                                     {deltaStr}

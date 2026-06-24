@@ -2,7 +2,7 @@
 
 /* Imports */
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { computeAdjustedEpa, type AdjustedEpaInput } from '@/lib/adjustedEpa';
+import { computeAdjustedEPA, type AdjustedEPAInput } from '@/lib/adjustedEpa';
 import  ProgressCircle from "@/components/ProgressCircle";
 import SeekFeedbackChart from "@/components/SeekFeedbackChart";
 import KeyPerformanceMetrics from "@/components/KeyPerformanceMetrics";
@@ -64,7 +64,7 @@ type Procedure = {
     oepa: number;
     trainee_name: string;
     attending_name: string;
-    attending_user_id?: number;           // needed to look up evaluator stats
+    attending_user_ids: number[];          // array — one entry per co-attending
     fluoroscopy_time_minutes?: number | null;
     fluoroscopy_dose_value?: number | null;
 };
@@ -247,10 +247,14 @@ export default function Dashboard() {
             setUser(data.user || null);
             setStats(data.stats || {});
             setProcedures(data.procedures || []);
+            // evaluatorStats is now returned by the dashboard API alongside procedures
+            // so we don't need a separate fetch — set it here directly.
+            if (data.evaluatorStats) setEvaluatorStats(data.evaluatorStats);
         } catch (err: any) {
             setError(err.message || 'Error loading dashboard');
         }
         setLoading(false);
+        setAdjustedStatsLoading(false);
     };
 
     // fetch adjusted EPA stats for evaluator benchmarking and procedure-specific medians
@@ -260,7 +264,7 @@ export default function Dashboard() {
             const res = await fetch('/api/adjustedEpaStats');
             if (!res.ok) return;
             const data = await res.json();
-            if (data.evaluatorStats) setEvaluatorStats(data.evaluatorStats);
+            // evaluatorStats comes from /api/dashboard now — only take procedureMedians here
             if (data.procedureMedians) setProcedureMedians(data.procedureMedians);
         } catch (e) {
             console.error('Failed to fetch adjusted EPA stats', e);
@@ -749,37 +753,50 @@ export default function Dashboard() {
     }, [procedures, countsSelectedProcedure, countsGranularity]);
 
     const adjustedEpaByReportId = useMemo(() => {
-        const map: Record<number, { eAdj: number; pw: number; cCase: number; zEval: number; zScore: number | null } | null> = {};
-        // ── TEMP DEBUG ──
+        const map: Record<number, ReturnType<typeof computeAdjustedEPA> | null> = {};
+        // ── TEMP DEBUG: top-level state check ──
         console.log('=== adjustedEpaByReportId recompute ===');
         console.log('procedures count:', procedures.length);
         console.log('evaluatorStats keys:', Object.keys(evaluatorStats));
-        console.log('procedureMedians keys:', Object.keys(procedureMedians).slice(0, 10));
-        console.log('sample procedure[0]:', procedures[0]);
+        console.log('evaluatorStats sample:', Object.entries(evaluatorStats).slice(0, 3));
+        console.log('procedureMedians keys (first 5):', Object.keys(procedureMedians).slice(0, 5));
+        console.log('raw evaluatorStats object:', evaluatorStats);
         // ── END DEBUG ──
+
         for (const proc of procedures) {
             const procKey = proc.proc_code?.trim().toLowerCase() ?? '';
             const procData = procedureMedians[procKey];
-            const evalData = proc.attending_user_id != null ? evaluatorStats[proc.attending_user_id] : undefined;
 
-            if (!procData && !evalData) {
+            // Build the evaluators array from all attending user_ids on this report.
+            // Attendings with no stats (new/excluded) are filtered out — the lib
+            // handles an empty array by returning evaluatorAdjustment = 0.
+            const evaluators = (proc.attending_user_ids ?? [])
+                .map(id => {
+                    const stats = evaluatorStats[Number(id)];
+                    if (!stats) return null;
+                    return { userId: Number(id), mean: stats.mean, stdDev: stats.stdDev };
+                })
+                .filter((e): e is { userId: number; mean: number; stdDev: number } => e !== null);
+
+            // Skip entirely if there's no raw score to adjust
+            if (!proc.oepa || Number(proc.oepa) <= 0) {
                 map[proc.report_id] = null;
                 continue;
             }
 
-            const result = computeAdjustedEpa({
-                eRaw: proc.oepa,
-                complexity: (procData?.complexity ?? null) as 1|2|3|4|5|null,
-                fluoroscopyTime: proc.fluoroscopy_time_minutes ?? null,
-                fluoroscopyTimeMedian: procData?.fluoroTimeMedian ?? null,
-                radiationDose: proc.fluoroscopy_dose_value ?? null,
-                radiationDoseMedian: procData?.radiationDoseMedian ?? null,
-                evaluatorMean: evalData?.mean ?? 0,
-                evaluatorStdDev: evalData?.stdDev ?? 0,
+            const result = computeAdjustedEPA({
+                rawScore: proc.oepa,
+                procedureDifficulty: ((procData?.complexity ?? 1) as 1 | 2 | 3 | 4 | 5),
+                tCase: proc.fluoroscopy_time_minutes ?? null,
+                tMedianP: procData?.fluoroTimeMedian ?? null,
+                dCase: proc.fluoroscopy_dose_value ?? null,
+                dMedianP: procData?.radiationDoseMedian ?? null,
+                evaluators,
             });
 
             map[proc.report_id] = result;
         }
+
         return map;
     }, [procedures, evaluatorStats, procedureMedians]);
 
@@ -1453,7 +1470,7 @@ export default function Dashboard() {
                                                             if (!adj) {
                                                                 return <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>—</span>;
                                                             }
-                                                            const delta = adj.eAdj - proc.oepa;
+                                                            const delta = adj.adjustedScore - proc.oepa;
                                                             const deltaStr = delta > 0.005
                                                                 ? `+${delta.toFixed(2)}`
                                                                 : delta < -0.005
@@ -1463,13 +1480,12 @@ export default function Dashboard() {
                                                             // Build tooltip lines explicitly so null/undefined never bleeds in
                                                             const tooltipLines = [
                                                                 `Raw EPA: ${proc.oepa}`,
-                                                                `Difficulty (Pw): +${adj.pw.toFixed(3)}`,
-                                                                `Complexity (Ccase): +${adj.cCase.toFixed(3)}`,
-                                                                `Evaluator bias (Zeval): ${adj.zEval >= 0 ? '+' : ''}${adj.zEval.toFixed(3)}`,
-                                                                adj.zScore != null
-                                                                    ? `Evaluator z-score: ${adj.zScore.toFixed(2)}`
+                                                                `Difficulty: +${adj.procedureDifficultyWeight.toFixed(3)}`,
+                                                                `Complexity: +${adj.complexityAdjustment.toFixed(3)}`,
+                                                                adj.evaluatorDetails.length > 0
+                                                                    ? `Panel Evaluator Bias: ${adj.evaluatorAdjustment >= 0 ? '+' : ''}${adj.evaluatorAdjustment.toFixed(3)}`
                                                                     : 'Evaluator correction not applied (insufficient history)',
-                                                            ];
+                                                                ];
 
                                                             const isPositive = delta > 0.005;
                                                             const isNegative = delta < -0.005;
@@ -1480,7 +1496,7 @@ export default function Dashboard() {
                                                                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'context-menu' }}
                                                                 >
                                                                     <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                                                                        {adj.eAdj.toFixed(2)}
+                                                                        {adj.adjustedScore.toFixed(2)}
                                                                     </span>
                                                                     <span style={{
                                                                         fontSize: 10,

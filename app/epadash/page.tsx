@@ -6,6 +6,7 @@ import { computeAdjustedEPA, type AdjustedEPAInput } from '@/lib/adjustedEpa';
 import  ProgressCircle from "@/components/ProgressCircle";
 import SeekFeedbackChart from "@/components/SeekFeedbackChart";
 import KeyPerformanceMetrics from "@/components/KeyPerformanceMetrics";
+import ProcedureLogTable, { type Procedure } from '@/components/ProcedureLogTable';
 import { 
     epaTrendOptions, 
     complexityVsEpaOptions, 
@@ -54,21 +55,6 @@ type User = {
     rotation: string | null;
 };
 
-type Procedure = {
-    report_id: number;
-    create_date: string;
-    proc_desc: string;
-    proc_code?: string;
-    seek_feedback: 'not_required' | 'feedback_requested' | 'discussed';
-    complexity: number;
-    oepa: number;
-    trainee_name: string;
-    attending_name: string;
-    attending_user_ids: number[];          // array — one entry per co-attending
-    fluoroscopy_time_minutes?: number | null;
-    fluoroscopy_dose_value?: number | null;
-};
-
 type Stats = {
     avg_epa: number;
     procedures: number;
@@ -90,29 +76,6 @@ const getFeedbackStatus = (seekFeedback: string | number) => {
         case 'feedback_requested': return { text: 'Feedback Requested', color: '#856404', bgColor: '#fff3cd' };
         case 'discussed': return { text: 'Discussed', color: '#155724', bgColor: '#d4edda' };
         default: return { text: 'Unknown', color: '#721c24', bgColor: '#f8d7da' };
-    }
-};
-
-// helper function to describe scores
-const getEPADescription = (score: number) => {
-    switch(score) {
-        case 1: return "1 – Not allowed to practice procedure/task.";
-        case 2: return "2 – Allowed to practice procedure/task only under proactive, full supervision.";
-        case 3: return "3 – Allowed to practice procedure/task only under assisted direct supervision.";
-        case 4: return "4 – Allowed to practice procedure/task without direct supervision.";
-        case 5: return "5 – Allowed to supervise others in practice of procedure/task.";
-        default: return "Trainee was not observed by an attending in this capacity.";
-    }
-};
-
-// helper function to describe complexity
-const getComplexityDescription = (complexity: number) => {
-    switch(complexity) {
-        case 1: return "1 - Straightforward";
-        case 2: return "2 - Mildly Complex";
-        case 3: return "3 - Moderately Complex";
-        case 4: return "4 - Very Complex";
-        default: return "Unavailable";
     }
 };
 
@@ -1424,97 +1387,12 @@ export default function Dashboard() {
                                 borderRadius: 6,
                                 fontSize: 13,
                             }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', color: '#0f172a' }}>
-                                    <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 20, boxShadow: '0 2px 6px rgba(0,0,0,0.06)' }}>
-                                        <tr>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Date</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}><strong>Trainee</strong></th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Description</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>EPA</th>
-                                            <th style={{ padding: '8px 12px', textAlign: 'center', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>
-                                                Adj. EPA
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {loading ? (
-                                            <tr>
-                                                <td colSpan={4} style={{ textAlign: 'center', color: '#888', padding: '20px' }}>Loading...</td>
-                                            </tr>
-                                        ) : (
-                                            procedures.map((proc) => (
-                                                <tr key={proc.report_id} style={{ borderBottom: '1px solid #f8f9fa' }}>
-                                                    <td style={{ padding: '8px 12px', color: '#000' }}>{proc.create_date}</td>
-                                                    <td style={{ padding: '8px 12px', color: '#000' }}>
-                                                        <div style={{ fontWeight: 600 }}>{proc.trainee_name}</div>
-                                                        <div style={{ fontSize: 12, color: '#666' }}>{proc.attending_name}</div>
-                                                    </td>
-                                                    <td style={{ padding: '8px 12px', color: '#000' }}>{proc.proc_desc}</td>
-                                                    <td
-                                                    style={{ padding: '8px 12px', color: '#000', textAlign: 'center', fontWeight: 600 }}
-                                                    title={proc.oepa ? getEPADescription(proc.oepa) : 'No EPA score recorded'}
-                                                    >
-                                                        {proc.oepa && Number(proc.oepa) > 0 ? proc.oepa : (
-                                                            <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>—</span>
-                                                        )}
-                                                    </td>
-                                                    <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                                                        {(() => {
-                                                            if (adjustedStatsLoading) {
-                                                                return <span style={{ color: '#9ca3af', fontSize: 12 }}>…</span>;
-                                                            }
-                                                            if (!proc.oepa || Number(proc.oepa) <= 0) {
-                                                                return <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>—</span>;
-                                                            }
-                                                            const adj = adjustedEpaByReportId[proc.report_id];
-                                                            if (!adj) {
-                                                                return <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 12 }}>—</span>;
-                                                            }
-                                                            const delta = adj.adjustedScore - proc.oepa;
-                                                            const deltaStr = delta > 0.005
-                                                                ? `+${delta.toFixed(2)}`
-                                                                : delta < -0.005
-                                                                ? delta.toFixed(2)
-                                                                : '±0';
-
-                                                            // Build tooltip lines explicitly so null/undefined never bleeds in
-                                                            const tooltipLines = [
-                                                                `Raw EPA: ${proc.oepa}`,
-                                                                `Difficulty: +${adj.procedureDifficultyWeight.toFixed(3)}`,
-                                                                `Complexity: +${adj.complexityAdjustment.toFixed(3)}`,
-                                                                adj.evaluatorDetails.length > 0
-                                                                    ? `Panel Evaluator Bias: ${adj.evaluatorAdjustment >= 0 ? '+' : ''}${adj.evaluatorAdjustment.toFixed(3)}`
-                                                                    : 'Evaluator correction not applied (insufficient history)',
-                                                                ];
-
-                                                            const isPositive = delta > 0.005;
-                                                            const isNegative = delta < -0.005;
-
-                                                            return (
-                                                                <div
-                                                                    title={tooltipLines.join('\n')}
-                                                                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'context-menu' }}
-                                                                >
-                                                                    <span style={{ fontWeight: 600, color: '#0f172a' }}>
-                                                                        {adj.adjustedScore.toFixed(2)}
-                                                                    </span>
-                                                                    <span style={{
-                                                                        fontSize: 10,
-                                                                        fontWeight: 400,
-                                                                        opacity: 0.6,
-                                                                        color: isPositive ? '#166534' : isNegative ? '#991b1b' : '#6b7280',
-                                                                    }}>
-                                                                        {deltaStr}
-                                                                    </span>
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
+                                <ProcedureLogTable
+                                    procedures={procedures}
+                                    adjustedEpaByReportId={adjustedEpaByReportId}
+                                    adjustedStatsLoading={adjustedStatsLoading}
+                                    loading={loading}
+                                />
                             </div>
                         </div>
                     </div>

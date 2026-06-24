@@ -1398,7 +1398,12 @@ export default function Dashboard() {
                     </div>
 
                     {/* Right Column: Progress Circle and Recent Feedback */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'stretch' }}>
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 20,
+                        minWidth: 0,
+                    }}>
                         {/* Report Progress Circle */}
                         <ReportProgressCircle
                             completed={stats.total_reports}
@@ -1407,9 +1412,10 @@ export default function Dashboard() {
                         />
 
                         {/* Key Performance Metrics (replaces recent feedback on trainee dashboard) */}
-                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                            <KeyPerformanceMetrics procedures={procedures} loading={loading} />
-                        </div>
+                        <KeyPerformanceMetrics 
+                            procedures={procedures} 
+                            loading={loading} 
+                        />
 
                         {/* Seek Feedback Rate Trends component removed from trainee dashboard (component retained) */}
                     </div>

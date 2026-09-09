@@ -13,8 +13,8 @@
  *   output/unmatched_epas.csv  → for manual_resolve_epa.js
  *
  * Usage:
- *   node scripts/extract_epa.js --dry-run [--limit N] [--report-id ID]
- *   node scripts/extract_epa.js --write   [--limit N] [--force]
+ *   node scripts/extract_epa.js --dry-run [--limit N] [--report-id ID] [--new-only]
+ *   node scripts/extract_epa.js --write   [--limit N] [--force] [--new-only]
  *
  * Options:
  *   --dry-run      Show what would be written without touching the DB.
@@ -22,6 +22,14 @@
  *   --limit N      Reports to process (default 100; 0 = all).
  *   --report-id ID Single report by ReportID.
  *   --force        Overwrite existing epa_scores rows.
+ *   --new-only     Only fetch reports where none of their trainee
+ *                  participants have an epa_scores row yet (i.e. skip
+ *                  reports already handled by a prior run). Ignored when
+ *                  --report-id is given. Note: writes are already
+ *                  idempotent (writeScore checks for an existing row before
+ *                  inserting), so re-running without --new-only is safe —
+ *                  --new-only just avoids re-fetching/re-extracting reports
+ *                  you've already scored.
  */
 
 'use strict';
@@ -303,10 +311,21 @@ function extractEpaAssignments(text, participants, reportId, knownLastNames) {
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 
-async function fetchReportsWithParticipants(conn, limit, reportId) {
+async function fetchReportsWithParticipants(conn, limit, reportId, newOnly) {
   let where = `rp.role = 'trainee'`;
   const params = [];
   if (reportId) { where += ' AND rp.report_id = ?'; params.push(reportId); }
+
+  // When --new-only is set, exclude any report where at least one of its
+  // trainee participants already has an epa_scores row (i.e. this script
+  // has already run against that report before).
+  const newOnlyClause = newOnly
+    ? ` AND NOT EXISTS (
+          SELECT 1 FROM epa_scores es
+          JOIN report_participants rp2 ON rp2.id = es.report_participant_id
+          WHERE rp2.report_id = rp.report_id AND rp2.role = 'trainee'
+        )`
+    : '';
 
   let sql = `
     SELECT
@@ -320,7 +339,7 @@ async function fetchReportsWithParticipants(conn, limit, reportId) {
     FROM report_participants rp
     JOIN reports r ON r.ReportID = rp.report_id
     LEFT JOIN users u ON u.user_id = rp.user_id
-    WHERE ${where}
+    WHERE ${where}${newOnlyClause}
     ORDER BY rp.report_id
   `;
 
@@ -339,8 +358,14 @@ async function fetchReportsWithParticipants(conn, limit, reportId) {
       LEFT JOIN users u ON u.user_id = rp.user_id
       WHERE rp.role = 'trainee'
         AND rp.report_id IN (
-          SELECT DISTINCT report_id FROM report_participants
-          WHERE role = 'trainee' LIMIT ${Number(limit)}
+          SELECT DISTINCT rp3.report_id FROM report_participants rp3
+          WHERE rp3.role = 'trainee'${newOnly ? `
+            AND NOT EXISTS (
+              SELECT 1 FROM epa_scores es
+              JOIN report_participants rp4 ON rp4.id = es.report_participant_id
+              WHERE rp4.report_id = rp3.report_id AND rp4.role = 'trainee'
+            )` : ''}
+          LIMIT ${Number(limit)}
         )
       ORDER BY rp.report_id
     `;
@@ -402,6 +427,7 @@ async function main() {
     .option('limit',     {type:'number', default:100})
     .option('report-id', {type:'string', default:null})
     .option('force',     {type:'boolean',default:false})
+    .option('new-only',  {type:'boolean',default:false})
     .check(argv=>{
       if (!argv['dry-run']&&!argv.write) throw new Error('Pass --dry-run or --write.');
       if (argv['dry-run']&&argv.write)   throw new Error('--dry-run and --write are mutually exclusive.');
@@ -412,12 +438,29 @@ async function main() {
   try { conn = await mysql.createConnection(getRdsConfig()); }
   catch(e) { console.error('[FATAL]',e.message); process.exit(1); }
 
+  if (argv['new-only'] && argv['report-id'])
+    console.log('[INFO] --new-only is ignored when --report-id is given.');
+
   console.log('[INFO] Fetching trainee participants and report text…');
   const [byReport, knownLastNames] = await Promise.all([
-    fetchReportsWithParticipants(conn, argv['report-id']?0:argv.limit, argv['report-id']),
+    fetchReportsWithParticipants(
+      conn,
+      argv['report-id'] ? 0 : argv.limit,
+      argv['report-id'],
+      argv['new-only']
+    ),
     buildLastNames(conn),
   ]);
-  console.log(`[INFO] Processing ${byReport.size} report(s) with ${knownLastNames.size} known last names…`);
+
+  if (!byReport.size) {
+    console.log(argv['new-only']
+      ? '[INFO] No unprocessed reports found (all matching reports already have EPA scores).'
+      : '[INFO] No reports found.');
+    await conn.end();
+    return;
+  }
+
+  console.log(`[INFO] Processing ${byReport.size} report(s)${argv['new-only'] ? ' (new-only)' : ''} with ${knownLastNames.size} known last names…`);
 
   const allScores=[], allUnmatched=[];
 
@@ -427,11 +470,14 @@ async function main() {
     for (const u of unmatched) allUnmatched.push({...u});
   }
 
+  // Computed once here (not just inside printSummary) so the final
+  // per-reason counts logged below can use them too.
+  const unmatchedNoScore       = allUnmatched.filter(u=>u.reason==='no_score').length;
+  const unmatchedNoParticipant = allUnmatched.filter(u=>u.reason==='no_participant_match').length;
+
   function printSummary(allScores, allUnmatched, byReport, knownLastNames, writeStats) {
-    const totalScores            = allScores.length;
-    const unmatchedNoScore       = allUnmatched.filter(u=>u.reason==='no_score').length;
-    const unmatchedNoParticipant = allUnmatched.filter(u=>u.reason==='no_participant_match').length;
-    const totalAttempted         = totalScores + unmatchedNoParticipant;
+    const totalScores    = allScores.length;
+    const totalAttempted = totalScores + unmatchedNoParticipant;
     const pct = (n,d) => d ? `${((n/d)*100).toFixed(1)}%` : 'n/a';
     const W=72, LINE='═'.repeat(W), DASH='─'.repeat(W);
     const row=(l,v)=>console.log(`  ${l.padEnd(38)} : ${v}`);
@@ -492,7 +538,6 @@ async function main() {
   console.log('');
 
   printSummary(allScores, allUnmatched, byReport, knownLastNames, {written, skipped, errors});
-
 
   const unmatchedFile = 'unmatched_epas.csv';
   writeCSV(path.join(OUTPUT_DIR, unmatchedFile),

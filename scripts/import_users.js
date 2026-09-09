@@ -167,7 +167,7 @@ function processSheet(sheet, roleOverride = null) {
 
 async function main() {
   const argv = yargs(hideBin(process.argv))
-    .usage('node scripts/import_users_excel.js <file> [--dry-run|--write]')
+    .usage('node scripts/import_users.js <file> [--dry-run|--write]')
     .demandCommand(1)
     .option('dry-run', { type: 'boolean', default: false })
     .option('write', { type: 'boolean', default: false })

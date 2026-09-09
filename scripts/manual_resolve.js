@@ -14,7 +14,7 @@
  * no prompt is shown and no error is thrown.
  *
  * Usage:
- *   node scripts/manual_resolve.js --input output/unmatched_people.csv
+ *   node scripts/manual_resolve.js output/unmatched_people.csv
  */
 
 'use strict';

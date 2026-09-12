@@ -12,8 +12,8 @@
  *      (names that already exist in user_name_aliases are excluded from this file)
  *
  * Usage:
- *   node scripts/extract_personnel.js --dry-run [--limit N] [--report-id ID] [--new-only]
- *   node scripts/extract_personnel.js --write   [--limit N] [--force] [--new-only]
+ *   node scripts/extract_personnel.js --dry-run [--limit N] [--report-id ID]
+ *   node scripts/extract_personnel.js --write   [--limit N] [--force]
  *
  * Options:
  *   --dry-run      Show extraction results without writing.
@@ -21,14 +21,6 @@
  *   --limit N      Reports to process (default 100; 0 = all).
  *   --report-id ID Single report by ReportID.
  *   --force        Overwrite existing participant rows.
- *   --new-only     Only fetch reports that have no rows yet in
- *                  report_participants (i.e. skip anything already
- *                  processed by a prior run). Ignored when --report-id
- *                  is given, since that always targets one specific report.
- *                  Note: even without --new-only, writes are already
- *                  idempotent (INSERT IGNORE keyed on report_id/user_id/role),
- *                  so re-running is safe either way — --new-only just avoids
- *                  re-fetching/re-extracting reports you've already handled.
  */
 
 'use strict';
@@ -78,54 +70,6 @@ const PAREN_RE  = /\([^)]*\)/g;
 const DISCLAIMER_RE   = /[,.]?\s*(?:not\s+present|but\s+readily|available\s+for|for\s+the\s+procedure|readily\s+available).*/gi;
 const TRAINING_LEVEL_RE = /\b(?:R|PGY)\s*[-/]?\s*\d+\b/gi;
 
-// ─── Other (non trainee/attending) personnel-field labels ─────────────────────
-//
-// Reports sometimes contain additional "Procedural Personnel" fields for roles
-// we don't track as attendings/trainees, e.g.:
-//   Advanced Practice Provider: None
-//   Nurse: Jane Doe, RN
-//   Circulator: ...
-//
-// These need to be recognized and disregarded so their text (including the
-// label itself, like "Advanced Practice Provider: None") never gets pulled in
-// as a trainee/attending name. This can happen two ways:
-//   1. The field is its own entry and is picked up by the "and <name>"
-//      continuation logic (e.g. "and Advanced Practice Provider: None"
-//      following a Resident field on the same conceptual line).
-//   2. The field's text bleeds into a Resident/Attending field's captured
-//      content because the whitespace-based field splitter didn't cleanly
-//      separate them.
-const OTHER_LABEL_ALT =
-  'Advanced\\s+Practice\\s+Provider(?:\\(s\\))?' +
-  '|APP(?:\\(s\\))?' +
-  '|Nurse(?:\\(s\\))?' +
-  '|Circulator(?:\\(s\\))?' +
-  '|Scrub\\s*Tech(?:nologist)?(?:\\(s\\))?' +
-  '|Technologist(?:\\(s\\))?' +
-  '|Anesthesi(?:a|ologist)(?:\\(s\\))?' +
-  '|Student(?:\\(s\\))?' +
-  '|Observer(?:\\(s\\))?' +
-  '|Attending(?:\\(s\\))?(?:\\s+physician(?:s)?)?';
-
-// Matches when a whole string (or the remainder after "and ") IS one of
-// these other-role labels, e.g. "Advanced Practice Provider: None".
-const OTHER_LABEL_RE = new RegExp(`^(?:${OTHER_LABEL_ALT})\\s*:`, 'i');
-
-// Matches an other-role label appearing anywhere in a string (with either a
-// leading whitespace boundary or at the very start), used to truncate
-// Resident/Attending content that has another field's text bled into it.
-const OTHER_LABEL_MID_RE = new RegExp(`(?:^|\\s+)(?:${OTHER_LABEL_ALT})\\s*:`, 'i');
-
-// Strips off anything from the first occurrence of another personnel-field
-// label onward, so e.g. "Dr. Smith  Advanced Practice Provider: None"
-// becomes "Dr. Smith".
-function truncateAtOtherLabel(text) {
-  if (!text) return text;
-  const m = text.match(OTHER_LABEL_MID_RE);
-  if (!m) return text;
-  return text.slice(0, m.index).trim();
-}
-
 function cleanName(raw) {
   if (!raw) return null;
   let n = raw.trim()
@@ -139,14 +83,37 @@ function cleanName(raw) {
   return n;
 }
 
+
 // ─── Field splitting ──────────────────────────────────────────────────────────
+//
+// FIX: reports can be delimited two different ways:
+//   1. (old format) double-space or newline separated fields, e.g.
+//      "Attending(s): X\n\nResident(s): Y"
+//   2. (new format) single-space separated, run-on text, e.g.
+//      "Procedural Personnel Attending(s): X Resident(s) PGY6/7: Y Trainee EPA: 3 ..."
+//
+// The old splitter only broke on \n or 2+ spaces/tabs, so format 2 collapsed
+// into one giant field whose text didn't start with a recognized label
+// (it started with "Procedural Personnel Attending(s): ..."), so the
+// ^Attending / ^Resident anchored regexes downstream never matched anything.
+//
+// Fix: split with a zero-width lookahead placed immediately before each
+// recognized label, in addition to keeping the old \n / double-space splits
+// for backward compatibility with format 1.
+
+const LABEL_SPLIT_RE = /(?=\b(?:Attending(?:\(s\))?(?:\s+physician(?:s)?)?|Resident(?:\(s\))?(?:\s*PGY\s*[\d\/\-]+)?|Advanced\s+practice\s+provider(?:\(s\))?|Trainee\s+EPA|(?<!Trainee\s)EPA)\s*[:#])/gi;
 
 function getPersonnelFields(text) {
   if (!text) return [];
   const idx = text.search(/Procedural\s+Personnel/i);
   if (idx === -1) return [];
-  const raw = text.slice(idx).split(/\n\s*\n/)[0];
-  return raw.split(/[ \t]{2,}|\r?\n/).map(s => s.trim()).filter(Boolean);
+  const raw = text.slice(idx).split(/\n\s*\n/)[0]
+    .replace(/^.*?Procedural\s+Personnel\s*/i, ''); // strip the section header itself
+  return raw
+    .split(LABEL_SPLIT_RE)                            // split right before each label (new format)
+    .flatMap(chunk => chunk.split(/[ \t]{2,}|\r?\n/))  // still split on old delimiters (old format)
+    .map(s => s.trim())
+    .filter(Boolean);
 }
 
 function stripCredentials(raw) {
@@ -165,7 +132,9 @@ function splitNamesLoose(val, knownLastNames) {
   let s = stripCredentials(val)
     .replace(/\s*;\s*/g,'|').replace(/\s*\/\s*/g,'|').replace(/\s*&\s*/g,'|')
     .replace(/\s+and\s+/gi,'|')
-    .replace(/(?<=\b\w{2,})\.\s+(?=[A-Z][a-z])/g,'|')
+    // FIX: don't split on the period after a title abbreviation (Dr., Mr., etc.)
+    // — was previously splitting "Dr. Aslanyan" into "Dr" + "Aslanyan"
+    .replace(/(?<!\b(?:Dr|Mr|Mrs|Ms|Prof|Doctor|Professor))(?<=\b\w{2,})\.\s+(?=[A-Z][a-z])/g,'|')
     .replace(/,\s+(?=[A-Z][a-z]+)/g, (match, offset, str) => {
       const before = str.slice(0, offset).split('|').pop().trim();
       const after  = str.slice(offset + match.length).split(/[|,]/)[0].trim();
@@ -211,6 +180,24 @@ function parseNameEpaPairs(content, knownLastNames) {
   return pairs;
 }
 
+// Extract just the EPA score(s) out of a field that has no name in front of
+// it at all (e.g. the field IS "Trainee EPA: 3"). parseNameEpaPairs() can't
+// be reused for this: it requires at least one name token ahead of each EPA
+// anchor (see `if (!parts.length) continue;` above) and silently drops the
+// score otherwise — that's fine when the field always carries a name (its
+// normal use), but wrong for a standalone EPA-only field.
+function extractStandaloneEpaScores(field) {
+  const EPA_RE = /\b(?:Trainee\s+)?EPA\s*[:#]?\s*([1-5NR]?(?:\s*[,;\/&]\s*[1-5])*)/gi;
+  const scores = [];
+  let m;
+  while ((m = EPA_RE.exec(field)) !== null) {
+    const scoreStr = (m[1]||'').trim().toUpperCase();
+    if (scoreStr && scoreStr !== 'NR')
+      for (const dm of scoreStr.matchAll(/\b([1-5])\b/g)) scores.push(parseInt(dm[1],10));
+  }
+  return scores;
+}
+
 // ─── Attending + trainee extraction ──────────────────────────────────────────
 
 function extractAttendingNames(text, knownLastNames) {
@@ -218,11 +205,7 @@ function extractAttendingNames(text, knownLastNames) {
   for (const field of fields) {
     const m = field.match(/^Attending(?:\(s\))?(?:\s+physician(?:s)?)?\s*:\s*(.+)/i);
     if (!m) continue;
-    let val = m[1].trim().replace(DISCLAIMER_RE,'').trim();
-    // Guard: if another personnel field's text bled into this one
-    // (e.g. "Dr. Jones  Advanced Practice Provider: None"), cut it off.
-    val = truncateAtOtherLabel(val);
-    if (!val) continue;
+    const val = m[1].trim().replace(DISCLAIMER_RE,'').trim();
     for (const chunk of splitNamesLoose(val, knownLastNames)) {  // ← pass here too
       for (const name of (knownLastNames ? splitByKnownNames(chunk,knownLastNames) : [chunk])) {
         const c = cleanName(name);
@@ -243,60 +226,75 @@ function splitByKnownNames(val, knownLastNames) {
   return [val];
 }
 
+// FIX: an EPA / Trainee EPA label doesn't always land in the field
+// immediately after its trainee's "Resident(s):" field — another label
+// (most commonly "Attending(s):") can sit between the trainee's name and
+// the score, e.g.:
+//   Resident(s) PGY6/7: Dudley Charles  Attending(s): Dr. Smith  Trainee EPA: 3
+// Previously, any field that didn't itself start with "Resident" (and
+// wasn't an "and ..." continuation) fell into the `lastWasResident = false;
+// continue;` branch below and was dropped outright — so this trainee's
+// score never made it into `results`. The label just needs to appear
+// somewhere after a trainee in the report, not necessarily immediately
+// after their name. When a bare EPA-labeled field is found, attach its
+// score(s) to the most recently seen trainee on this report instead.
+const STANDALONE_EPA_RE = /^(?:Trainee\s+)?EPA\s*[:#]/i;
+
 function extractTrainees(text, knownLastNames) {
   const fields = getPersonnelFields(text), results = [];
   const LABEL_RE = /^Resident(?:\(s\))?\s*(?:PGY\s*[\d\/\-]+\s*)?:\s*(.*)/i;
   let lastWasResident = false;
+  let lastTrainee = null;
+
+  const addPair = (name, epas) => {
+    const c = cleanName(name); if (!c) return null;
+    let target = results.find(r=>r.name===c);
+    if (!target) { target = {name:c, epas:new Set()}; results.push(target); }
+    for (const s of epas) target.epas.add(s);
+    return target;
+  };
+
   for (let fi = 0; fi < fields.length; fi++) {
     const field = fields[fi];
     const andCont = field.match(/^and\s+(.+)/i);
     if (andCont && lastWasResident) {
-      let contText = andCont[1].trim();
-      // Guard: "and Advanced Practice Provider: None" (or similar) is NOT a
-      // continuation of the resident/trainee list — it's a different
-      // personnel category that happened to start with "and ". Strip off
-      // anything from that label onward, and if nothing name-like remains,
-      // disregard the field entirely instead of treating it as a trainee.
-      contText = truncateAtOtherLabel(contText);
-      if (!contText || OTHER_LABEL_RE.test(contText)) {
-        lastWasResident = false;
-        continue;
-      }
-      for (const {name,epas} of parseNameEpaPairs(contText, knownLastNames)) {
-        const c = cleanName(name); if (!c) continue;
-        const ex = results.find(r=>r.name===c);
-        if (ex) { for (const s of epas) ex.epas.add(s); } else results.push({name:c,epas:new Set(epas)});
+      for (const {name,epas} of parseNameEpaPairs(andCont[1].trim(), knownLastNames)) {
+        const t = addPair(name, epas);
+        if (t) lastTrainee = t;
       }
       continue;
     }
-    // A field belonging to another tracked role (Advanced Practice Provider,
-    // Nurse, Attending, etc.) should never be mistaken for a Resident field
-    // or bleed into the next continuation — treat it like any other
-    // non-Resident field: skip it and clear the "and ..." continuation flag.
-    if (OTHER_LABEL_RE.test(field)) { lastWasResident = false; continue; }
     const lm = field.match(LABEL_RE);
-    if (!lm) { lastWasResident=false; continue; }
-    lastWasResident = true;
-    let content = lm[1].trim(); if (!content) continue;
-    // Guard: if another personnel field's label/text bled into this
-    // Resident field's captured content, cut it off there.
-    content = truncateAtOtherLabel(content);
-    if (!content) continue;
+    if (lm) {
+      lastWasResident = true;
+      let content = lm[1].trim();
+      if (!content) continue;
 
-    if (!content.match(/EPA/i)) {
-      const next = fields[fi + 1] || '';
-      const nextEpa = next.match(/^(?:Trainee\s+)?EPA\s*[:#]?\s*([1-5NR].*)/i);
-      if (nextEpa) {
-        content = content + '  Trainee EPA: ' + nextEpa[1].trim();
-        fi++;
+      if (!content.match(/EPA/i)) {
+        const next = fields[fi + 1] || '';
+        const nextEpa = next.match(/^(?:Trainee\s+)?EPA\s*[:#]?\s*([1-5NR].*)/i);
+        if (nextEpa) {
+          content = content + '  Trainee EPA: ' + nextEpa[1].trim();
+          fi++;
+        }
       }
+
+      for (const {name,epas} of parseNameEpaPairs(content, knownLastNames)) {
+        const t = addPair(name, epas);
+        if (t) lastTrainee = t;
+      }
+      continue;
     }
 
-    for (const {name,epas} of parseNameEpaPairs(content, knownLastNames)) {
-      const c = cleanName(name); if (!c) continue;
-      const ex = results.find(r=>r.name===c);
-      if (ex) { for (const s of epas) ex.epas.add(s); } else results.push({name:c,epas:new Set(epas)});
+    // FIX (see note above STANDALONE_EPA_RE): attach a bare EPA field's
+    // score(s) to the last trainee identified on this report, instead of
+    // dropping the field because it isn't itself a "Resident:" line.
+    if (STANDALONE_EPA_RE.test(field) && lastTrainee) {
+      for (const s of extractStandaloneEpaScores(field)) lastTrainee.epas.add(s);
+      continue;
     }
+
+    lastWasResident = false;
   }
   return results.map(({name,epas})=>({name,epas:Array.from(epas).sort((a,b)=>a-b)}));
 }
@@ -438,31 +436,22 @@ async function upsertParticipant(conn, reportId, userId, role, sourceText, force
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 
-async function fetchReports(conn, limit, reportId, newOnly) {
+async function fetchReports(conn, limit, reportId) {
   if (reportId) {
-    // Explicit single-report request always targets that report, regardless
-    // of --new-only.
     const [rows] = await conn.execute(
       'SELECT ReportID, ContentText FROM reports WHERE ReportID=? AND ContentText IS NOT NULL',
       [reportId]
     );
     return rows;
   }
-
-  // When --new-only is set, exclude any report that already has at least
-  // one row in report_participants (from a prior run of this script).
-  const newOnlyClause = newOnly
-    ? ' AND NOT EXISTS (SELECT 1 FROM report_participants rp WHERE rp.report_id = reports.ReportID)'
-    : '';
-
   if (limit > 0) {
     const [rows] = await conn.execute(
-      `SELECT ReportID, ContentText FROM reports WHERE ContentText IS NOT NULL${newOnlyClause} LIMIT ${Number(limit)}`
+      `SELECT ReportID, ContentText FROM reports WHERE ContentText IS NOT NULL ORDER BY ReportID LIMIT ${Number(limit)}`
     );
     return rows;
   }
   const [rows] = await conn.execute(
-    `SELECT ReportID, ContentText FROM reports WHERE ContentText IS NOT NULL${newOnlyClause}`
+    'SELECT ReportID, ContentText FROM reports WHERE ContentText IS NOT NULL'
   );
   return rows;
 }
@@ -568,7 +557,6 @@ async function main() {
     .option('limit',     {type:'number', default:100})
     .option('report-id', {type:'string', default:null})
     .option('force',     {type:'boolean',default:false})
-    .option('new-only',  {type:'boolean',default:false})
     .check(argv=>{
       if (!argv['dry-run']&&!argv.write) throw new Error('Pass --dry-run or --write.');
       if (argv['dry-run']&&argv.write)   throw new Error('--dry-run and --write are mutually exclusive.');
@@ -579,23 +567,9 @@ async function main() {
   try { conn = await mysql.createConnection(getRdsConfig()); }
   catch(e) { console.error('[FATAL]',e.message); process.exit(1); }
 
-  if (argv['new-only'] && argv['report-id'])
-    console.log('[INFO] --new-only is ignored when --report-id is given.');
-
-  const rows = await fetchReports(
-    conn,
-    argv['report-id'] ? 0 : argv.limit,
-    argv['report-id'],
-    argv['new-only']
-  );
-  if (!rows.length) {
-    console.log(argv['new-only']
-      ? '[INFO] No unprocessed reports found (all matching reports already have participants).'
-      : '[INFO] No reports found.');
-    await conn.end();
-    return;
-  }
-  console.log(`[INFO] Processing ${rows.length} report(s)${argv['new-only'] ? ' (new-only)' : ''}…`);
+  const rows = await fetchReports(conn, argv['report-id']?0:argv.limit, argv['report-id']);
+  if (!rows.length) { console.log('[INFO] No reports found.'); await conn.end(); return; }
+  console.log(`[INFO] Processing ${rows.length} report(s)…`);
 
   const {cache,lastNames} = await buildUserCache(conn);
   const enriched = rows.map(r=>enrichRow(r,lastNames));

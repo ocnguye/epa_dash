@@ -34,6 +34,7 @@ interface ReportDetailRow {
     trainee_last_name: string;
     trainee_preferred_name: string | null;
     trainee_pgy: number | null;
+    trainee_pgy_note: string | null;
     epa_score: number | null; // null = no EPA given for this trainee on this report
 }
 
@@ -158,6 +159,7 @@ export async function GET(req: NextRequest) {
                 u_trainee.last_name         AS trainee_last_name,
                 u_trainee.preferred_name    AS trainee_preferred_name,
                 u_trainee.pgy               AS trainee_pgy,
+                u_trainee.pgy_note          AS trainee_pgy_note,
                 -- Aggregate: if multiple EPA scores exist pick the latest one,
                 -- NULL means no EPA was recorded for this trainee on this report
                 MAX(es.epa_score)           AS epa_score
@@ -188,7 +190,8 @@ export async function GET(req: NextRequest) {
                 u_trainee.first_name,
                 u_trainee.last_name,
                 u_trainee.preferred_name,
-                u_trainee.pgy
+                u_trainee.pgy,
+                u_trainee.pgy_note
 
             ORDER BY rp_att.user_id, r.CreateDate DESC
         `);
@@ -237,6 +240,7 @@ export async function GET(req: NextRequest) {
                 user_id: number;
                 name: string;
                 pgy: number | null;
+                pgy_note: string | null;
                 epa_score: number | null;
                 epa_provided: boolean;
             };
@@ -256,6 +260,7 @@ export async function GET(req: NextRequest) {
                         ? `${row.trainee_preferred_name} ${row.trainee_last_name}`
                         : `${row.trainee_first_name} ${row.trainee_last_name}`,
                     pgy: row.trainee_pgy,
+                    pgy_note: row.trainee_pgy_note,
                     epa_score: row.epa_score,
                     epa_provided: row.epa_score !== null,
                 },

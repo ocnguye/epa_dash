@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import ProvisionGauge from '../../components/EPAProvisionGauge';
+import { formatPGY } from '../../lib/formatPGY';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ type ReportDetail = {
         user_id: number;
         name: string;
         pgy: number | null;
+        pgy_note: string | null;
         epa_score: number | null;
         epa_provided: boolean;
     };
@@ -485,7 +487,7 @@ export default function AdminDash() {
                                                     </div>                                                
                                                 </div>
                                                 <span style={{ fontSize: 13, color: '#6b7280' }}>
-                                                    {r.trainee.name}{r.trainee.pgy ? ` · PGY-${r.trainee.pgy}` : ''}
+                                                    {r.trainee.name}{r.trainee.pgy ? ` · ${formatPGY(r.trainee.pgy, r.trainee.pgy_note)}` : ''}
                                                 </span>
                                                 <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
                                                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: r.trainee.epa_provided ? BORDERS.green : BORDERS.red, flexShrink: 0, display: 'inline-block' }} />

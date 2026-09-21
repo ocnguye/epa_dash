@@ -2,16 +2,28 @@
 /**
  * scripts/increase_pgy.js
  *
- * Increments every user's PGY by 1 and records a status note in the
- * `pgy_note` column:
- *   - new PGY > 7    -> "Graduated"
- *   - new PGY === 6  -> "PGY 6 - first-year"
- *   - new PGY === 7  -> "PGY 7 - second-year"
- *   - anything else  -> pgy_note cleared (NULL)
+ * Two modes:
+ *
+ * 1) Increment mode (default)
+ *    Increments every user's PGY by 1 and records a status note in the
+ *    `pgy_note` column:
+ *      - new PGY > 7    -> "Graduated"
+ *      - new PGY === 6  -> "PGY 6 - first-year"
+ *      - new PGY === 7  -> "PGY 7 - second-year"
+ *      - anything else  -> pgy_note cleared (NULL)
+ *
+ * 2) Sync mode (--sync-notes)
+ *    Leaves PGY untouched and recomputes pgy_note from each user's CURRENT
+ *    PGY using the same rules as above. Only rows whose note differs from
+ *    the expected value are updated. Use this to repair inconsistent notes.
  *
  * Usage:
  *   node scripts/increase_pgy.js --dry-run
  *   node scripts/increase_pgy.js --write
+ *   node scripts/increase_pgy.js --sync-notes --dry-run
+ *   node scripts/increase_pgy.js --sync-notes --write
+ *
+ * NOTE: --write WITHOUT --sync-notes increments everyone's PGY.
  *
  * Required env vars:
  *   AWS_RDS_HOST, AWS_RDS_USER, AWS_RDS_PWD, AWS_RDS_DB
@@ -44,10 +56,10 @@ function getDbConfig() {
 // NOTE LOGIC
 // ─────────────────────────────────────────────
 
-function noteFor(newPgy) {
-  if (newPgy > 7) return 'Graduated';
-  if (newPgy === 6) return 'PGY 6 - first-year';
-  if (newPgy === 7) return 'PGY 7 - second-year';
+function noteFor(pgy) {
+  if (pgy > 7) return 'Graduated';
+  if (pgy === 6) return 'PGY 6 - first-year';
+  if (pgy === 7) return 'PGY 7 - second-year';
   return null;
 }
 
@@ -81,9 +93,14 @@ async function ensurePgyNoteColumn(conn, dryRun) {
 
 async function main() {
   const argv = yargs(hideBin(process.argv))
-    .usage('node scripts/increase_pgy.js [--dry-run|--write]')
+    .usage('node scripts/increase_pgy.js [--dry-run|--write] [--sync-notes]')
     .option('dry-run', { type: 'boolean', default: false })
     .option('write', { type: 'boolean', default: false })
+    .option('sync-notes', {
+      type: 'boolean',
+      default: false,
+      describe: 'Recompute pgy_note from current PGY without changing PGY',
+    })
     .check(argv => {
       if (!argv['dry-run'] && !argv.write) {
         throw new Error('Must pass --dry-run or --write');
@@ -96,16 +113,20 @@ async function main() {
     .argv;
 
   const dryRun = argv['dry-run'];
+  const syncOnly = argv['sync-notes'];
 
   const conn = await mysql.createConnection(getDbConfig());
 
   let updated = 0;
+  let unchanged = 0;
 
   try {
     await ensurePgyNoteColumn(conn, dryRun);
 
     const [users] = await conn.execute(
-      `SELECT user_id, first_name, last_name, pgy FROM users WHERE pgy IS NOT NULL`
+      `SELECT user_id, username, first_name, last_name, pgy, pgy_note
+         FROM users
+        WHERE pgy IS NOT NULL`
     );
 
     if (users.length === 0) {
@@ -113,14 +134,41 @@ async function main() {
       return;
     }
 
-    console.log(`\nProcessing users: ${users.length}`);
+    console.log(`\nMode: ${syncOnly ? 'SYNC NOTES ONLY' : 'INCREMENT PGY'}${dryRun ? ' (dry run)' : ''}`);
+    console.log(`Processing users: ${users.length}`);
 
     if (!dryRun) await conn.beginTransaction();
 
     for (const u of users) {
+      const label = u.username || `${u.first_name} ${u.last_name}`;
+
+      // ── Sync-only mode: fix the note, leave PGY alone ──
+      if (syncOnly) {
+        const note = noteFor(u.pgy);
+
+        if ((u.pgy_note ?? null) === note) {
+          unchanged++;
+          continue;
+        }
+
+        if (dryRun) {
+          console.log(
+            `[DRY] SYNC ${label}: PGY ${u.pgy}, pgy_note "${u.pgy_note ?? 'NULL'}" -> "${note ?? 'NULL'}"`
+          );
+        } else {
+          await conn.execute(
+            `UPDATE users SET pgy_note = ? WHERE user_id = ?`,
+            [note, u.user_id]
+          );
+          console.log(`[SYNC] ${label}: PGY ${u.pgy}, pgy_note -> "${note ?? 'NULL'}"`);
+        }
+        updated++;
+        continue;
+      }
+
+      // ── Increment mode ──
       const newPgy = u.pgy + 1;
       const note = noteFor(newPgy);
-      const label = u.username || `${u.first_name} ${u.last_name}`;
 
       if (dryRun) {
         console.log(
@@ -141,6 +189,7 @@ async function main() {
 
     console.log('\n──────── SUMMARY ────────');
     console.log(`${dryRun ? 'Would update' : 'Updated'}: ${updated}`);
+    if (syncOnly) console.log(`Already correct: ${unchanged}`);
     console.log('─────────────────────────\n');
   } catch (err) {
     if (!dryRun) await conn.rollback();

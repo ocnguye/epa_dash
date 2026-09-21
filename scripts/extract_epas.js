@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scripts/extract_epas.js
+ * scripts/extract_epa.js
  *
  * Reads report_participants (trainees only) and the corresponding
  * ContentText from reports, extracts EPA scores, and writes to epa_scores.
@@ -13,8 +13,8 @@
  *   output/unmatched_epas.csv  → for manual_resolve_epa.js
  *
  * Usage:
- *   node scripts/extract_epas.js --dry-run [--limit N] [--report-id ID]
- *   node scripts/extract_epas.js --write   [--limit N] [--force]
+ *   node scripts/extract_epa.js --dry-run [--limit N] [--report-id ID]
+ *   node scripts/extract_epa.js --write   [--limit N] [--force]
  *
  * Options:
  *   --dry-run      Show what would be written without touching the DB.
@@ -266,7 +266,17 @@ const STANDALONE_EPA_RE = /^(?:Trainee\s+)?EPA\s*[:#]/i;
 
 function extractEpaAssignments(text, participants, reportId, knownLastNames) {
   const fields = getPersonnelFields(text);
-  const LABEL_RE = /^Resident(?:\(s\))?\s*(?:PGY\s*[\d\/\-]+\s*)?:\s*(.*)/i;
+  // FIX: LABEL_SPLIT_RE (above) treats ":" and "#" as interchangeable label
+  // delimiters for every label, Resident included — so a report using
+  // "Resident(s) PGY6/7#" gets split into its own field correctly, but this
+  // regex previously only recognized ":" and silently failed to match that
+  // field. That meant the trainee named in it was never registered, so
+  // lastMatchedParticipant never got set, and every EPA score depending on
+  // it (including ones reached via the STANDALONE_EPA_RE fallback) had no
+  // participant to attach to and landed in unmatched_epas.csv as
+  // no_participant_match. Accepting "#" here too keeps this in sync with
+  // what the splitter itself already recognizes.
+  const LABEL_RE = /^Resident(?:\(s\))?\s*(?:PGY\s*[\d\/\-]+\s*)?[:#]\s*(.*)/i;
   const EPA_RE   = /\b(?:Trainee\s+)?EPA\s*[:#]?\s*([1-5NR]?(?:\s*[,;\/&]\s*[1-5])*)/gi;
 
   const scores    = [];

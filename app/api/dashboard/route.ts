@@ -20,9 +20,9 @@ export async function GET(req: NextRequest) {
 
         // ── Authenticated user ────────────────────────────────────────────────
         const [userRows] = await connection.execute(
-            `SELECT user_id, first_name, last_name, role, username, preferred_name, pgy
-             FROM users
-             WHERE username = ?`,
+            `SELECT user_id, first_name, last_name, role, username, preferred_name, pgy, pgy_note
+            FROM users
+            WHERE username = ?`,
             [username]
         );
         if (!Array.isArray(userRows) || userRows.length === 0) {
@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
                 : null,
             role:           rawUser.role           ?? null,
             pgy:            rawUser.pgy != null ? Number(rawUser.pgy) : null,
+            pgy_note:       rawUser.pgy_note     ?? null,
         };
         const user_id = user.user_id;
 

@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { computeAdjustedEPA, type AdjustedEPAInput } from '@/lib/adjustedEpa';
 import  ProgressCircle from "@/components/ProgressCircle";
 import SeekFeedbackChart from "@/components/SeekFeedbackChart";
+import { formatPGYValue } from '@/lib/formatPGY';
 import KeyPerformanceMetrics from "@/components/KeyPerformanceMetrics";
 import ProcedureLogTable, { type Procedure } from '@/components/ProcedureLogTable';
 import { 
@@ -53,6 +54,8 @@ type User = {
     role: string;
     specialty: string | null;
     rotation: string | null;
+    pgy: number | null;
+    pgy_note: string | null;
 };
 
 type Stats = {
@@ -295,7 +298,7 @@ export default function Dashboard() {
             first_name: (user as any)?.first_name ?? '',
             last_name: (user as any)?.last_name ?? '',
             role: (user as any)?.role ?? '',
-            pgy: typeof (user as any)?.pgy !== 'undefined' && (user as any)?.pgy !== null ? String((user as any).pgy) : '',
+            pgy: (user as any)?.pgy !== null ? String((user as any).pgy) : '',
         });
         setShowProfileModal(true);
     };
@@ -964,8 +967,7 @@ export default function Dashboard() {
                                     <span>{` ${((user as any)?.preferred_name && String((user as any).preferred_name).trim()) ? String((user as any).preferred_name).trim() : user.first_name} ${user.last_name}`}</span>
                                     <span>{' | '}</span>
                                     <strong>PGY:</strong>
-                                    <span>{` ${(user as any)?.pgy != null ? (user as any).pgy : ''}`}</span>
-                                    <span>{' | '}</span>
+                                    <span>{` ${formatPGYValue((user as any)?.pgy, (user as any)?.pgy_note)}`}</span>                                    <span>{' | '}</span>
                                     <strong>Specialty:</strong>
                                     <span>{` ${user.specialty ?? 'Interventional Radiology'}`}</span>
                                 </>

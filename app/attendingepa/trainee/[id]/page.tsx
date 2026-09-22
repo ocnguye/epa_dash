@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import CohortStrengthsWeaknesses, { ProcedureStat } from '../../../../components/CohortStrengthsWeaknesses';
 import ReportProgressCircle from '../../../../components/ReportProgressCircle';
+import { formatPGYValue } from '@/lib/formatPGY';
 
 import { 
     Chart as ChartJS, 
@@ -285,10 +286,10 @@ export default function TraineePage() {
                                   <span>{` ${((user as any)?.preferred_name && String((user as any).preferred_name).trim()) ? String((user as any).preferred_name).trim() : user.first_name} ${user.last_name}`}</span>
                                   <span>{' | '}</span>
                                   <strong>PGY:</strong>
-                                  <span>{` ${(user as any)?.pgy != null ? (user as any).pgy : ''}`}</span>
+                                  <span>{` ${formatPGYValue((user as any)?.pgy, (user as any)?.pgy_note)}`}</span>
                                   <span>{' | '}</span>
                                   <strong>Specialty:</strong>
-                                  <span>{' Interventional Radiology'}</span>
+                                  <span>{` ${user.specialty ?? 'Interventional Radiology'}`}</span>
                               </>
                           ) : (
                               'Loading user info...'

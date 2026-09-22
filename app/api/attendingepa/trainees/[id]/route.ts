@@ -50,7 +50,7 @@ export async function GET(req: NextRequest, context: any) {
         const exactDesc = searchParams.get('exact_desc')?.trim() || null;
 
         const [userRows] = await connection.execute(
-            `SELECT user_id, username, first_name, last_name, preferred_name, pgy, role FROM users WHERE user_id = ?`,
+            `SELECT user_id, username, first_name, last_name, preferred_name, pgy, pgy_note, role FROM users WHERE user_id = ?`,
             [traineeId]
         );
         const rawUser = Array.isArray(userRows) && (userRows as any)[0] ? (userRows as any)[0] : null;
@@ -66,6 +66,7 @@ export async function GET(req: NextRequest, context: any) {
             last_name: rawUser.last_name ?? null,
             preferred_name: rawUser.preferred_name ? String(rawUser.preferred_name).trim() : null,
             pgy: typeof rawUser.pgy !== 'undefined' && rawUser.pgy !== null ? Number(rawUser.pgy) : null,
+            pgy_note: rawUser.pgy_note ?? null,
             role: rawUser.role ?? null,
         } as any;
 

@@ -479,7 +479,7 @@ export default function AttendingPage() {
                             {/* Cohort chart */}
                             <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                                 <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12, flexShrink: 0 }}>Cohort EPA Comparison</div>
-                                <div style={{ overflowY: 'auto', flex: 1 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                                     <AttendingCohortChart
                                         trainees={filtered}
                                         allTrainees={trainees}

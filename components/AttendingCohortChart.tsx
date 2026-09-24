@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useMemo } from 'react';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from 'chart.js';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, LineController, BarController, PointElement, Title, Tooltip, Legend } from 'chart.js';
+
 import { Bar } from 'react-chartjs-2';
 
 type Trainee = {
@@ -14,7 +15,31 @@ type Trainee = {
     report_count?: number;
 };
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarElement, BarController, LineElement, LineController, PointElement, Title, Tooltip, Legend);
+
+const MIN_PX_PER_TRAINEE = 64; // tweak: smaller = denser, larger = roomier
+const SCROLLBAR_H = 14;
+
+// PGY Legend and Color Palette
+const PGY_COLORS = [
+    'rgba(255, 126, 112, 0.6)', // PGY 1 — coral (red)
+    'rgba(255, 196, 140, 0.6)', // PGY 2 — peach (orange)
+    'rgba(255, 226, 108, 0.6)', // PGY 3 — yellow
+    'rgba(200, 230, 180, 0.6)', // PGY 4 — sage (yellow-green)
+    'rgba(178, 211, 194, 0.6)', // PGY 5 — green
+    'rgba(175, 213, 240, 0.6)', // PGY 6 — blue
+    'rgba(200, 206, 238, 0.6)', // PGY 7 — lavender (blue-purple)
+];
+
+const PGY_BORDERS = [
+    '#ff7e70', // PGY 1 — coral
+    '#ffc48c', // PGY 2 — peach
+    '#ffe26c', // PGY 3 — yellow
+    '#c8e6b4', // PGY 4 — sage
+    '#b2d3c2', // PGY 5 — green
+    '#afd5f0', // PGY 6 — blue
+    '#c8ceee', // PGY 7 — lavender
+    ];
 
 export default function AttendingCohortChart({
     trainees,
@@ -25,27 +50,6 @@ export default function AttendingCohortChart({
     allTrainees: Trainee[];        // always the full unfiltered list, for overall avg
     pgyFilter?: number | null;
 }) {
-
-    // PGY Legend and Color Palette
-    const PGY_COLORS = [
-        'rgba(255, 126, 112, 0.6)', // PGY 1 — coral (red)
-        'rgba(255, 196, 140, 0.6)', // PGY 2 — peach (orange)
-        'rgba(255, 226, 108, 0.6)', // PGY 3 — yellow
-        'rgba(200, 230, 180, 0.6)', // PGY 4 — sage (yellow-green)
-        'rgba(178, 211, 194, 0.6)', // PGY 5 — green
-        'rgba(175, 213, 240, 0.6)', // PGY 6 — blue
-        'rgba(200, 206, 238, 0.6)', // PGY 7 — lavender (blue-purple)
-    ];
-
-    const PGY_BORDERS = [
-        '#ff7e70', // PGY 1 — coral
-        '#ffc48c', // PGY 2 — peach
-        '#ffe26c', // PGY 3 — yellow
-        '#c8e6b4', // PGY 4 — sage
-        '#b2d3c2', // PGY 5 — green
-        '#afd5f0', // PGY 6 — blue
-        '#c8ceee', // PGY 7 — lavender
-        ];
 
     // Compute reference line: cohort avg when PGY filter active, overall avg otherwise
     const { refValue, refLabel } = useMemo(() => {
@@ -131,9 +135,43 @@ export default function AttendingCohortChart({
         return { labels, datasets };
     }, [trainees, refValue, refLabel]);
 
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const chartWrapRef = useRef<HTMLDivElement>(null);
+    const [viewWidth, setViewWidth] = useState(0);
+    const [start, setStart] = useState(0);
+
+    const total = cohortChart.labels.length;
+    const visible = Math.max(1, Math.floor(viewWidth / MIN_PX_PER_TRAINEE) || total);
+    const needsScroll = total > visible;
+    const maxStart = Math.max(0, total - visible);
+    const safeStart = Math.min(start, maxStart);
+
+    // measure the visible width
+    useEffect(() => {
+        const el = chartWrapRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(([entry]) => setViewWidth(Math.round(entry.contentRect.width)));
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    // reset scroll when the dataset changes (filter/sort)
+    useEffect(() => {
+        setStart(0);
+        if (scrollRef.current) scrollRef.current.scrollLeft = 0;
+    }, [total, trainees]);
+
     const cohortOptions = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
+        resizeDelay: 100,
+        animation: { duration: 350, easing: 'easeOutCubic' },
+        transitions: {
+            // don't animate on container resize (that's what made it feel glitchy before)
+            resize: { animation: { duration: 0 } },
+            // quick hover color change instead of the 400ms default
+            active: { animation: { duration: 120 } },
+        },
         plugins: {
             hoverSlopeLine: false,
             legend: {
@@ -223,11 +261,13 @@ export default function AttendingCohortChart({
                 title: { display: true, text: 'Average EPA' }
             },
             x: {
+                min: safeStart,
+                max: safeStart + visible - 1,
                 grid: { color: 'rgba(0,0,0,0.03)' },
-                ticks: { maxRotation: 45, minRotation: 0 }
-            }
+                ticks: { autoSkip: false, maxRotation: 45, minRotation: 45 },
+            },
         }
-    }), [cohortChart.datasets.length]);
+    }), [cohortChart.datasets.length, pgyFilter, safeStart, visible]);
 
     if (!cohortChart.labels || cohortChart.labels.length === 0) {
         return (
@@ -238,11 +278,34 @@ export default function AttendingCohortChart({
     }
 
     const count = cohortChart.labels.length;
-    const chartHeight = Math.max(200, Math.min(480, Math.round(count * 36)));
+    const innerWidth = count * MIN_PX_PER_TRAINEE;
 
     return (
-        <div style={{ width: '100%', height: chartHeight }}>
-            <Bar data={cohortChart as any} options={cohortOptions as any} />
+        <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+            <div
+                ref={chartWrapRef}
+                onWheel={(e) => {
+                    if (needsScroll && scrollRef.current && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                        scrollRef.current.scrollLeft += e.deltaX;
+                    }
+                }}
+                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: needsScroll ? SCROLLBAR_H : 0 }}
+            >
+                <Bar data={cohortChart as any} options={cohortOptions as any} />
+            </div>
+
+            {needsScroll && (
+                <div
+                    ref={scrollRef}
+                    onScroll={(e) => {
+                        const idx = Math.round(e.currentTarget.scrollLeft / MIN_PX_PER_TRAINEE);
+                        setStart(Math.min(maxStart, idx));
+                    }}
+                    style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: SCROLLBAR_H, overflowX: 'auto', overflowY: 'hidden' }}
+                >
+                    <div style={{ width: total * MIN_PX_PER_TRAINEE, height: 1 }} />
+                </div>
+            )}
         </div>
     );
 }

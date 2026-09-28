@@ -498,7 +498,7 @@ def build_case_level_table(conn, start_date=None, end_date=None):
     cases["procedure_duration_minutes"] = None
     cases["report_turnaround_hours"] = None
 
-    cases["content_text_preview"] = cases["ContentText"].str.slice(0, 300)
+    cases["content_text_full"] = cases["ContentText"]
     cases = cases.drop(columns=["ContentText"])
 
     return cases

@@ -50,7 +50,6 @@ const BORDERS = {
     yellow: '#ffe26c',
 };
 
-// Rate color uses palette levels
 function rateColor(rate: number | null): string {
     if (rate === null) return '#9ca3af';
     if (rate >= 80) return BORDERS.green;
@@ -85,22 +84,17 @@ export default function AdminDash() {
     const [details, setDetails] = useState<Record<number, ReportDetail[]>>({});
     const [totalMissingEpa, setTotalMissingEpa] = useState<number>(0);
 
-    // drill-down state
     const [selectedAttending, setSelectedAttending] = useState<AttendingSummary | null>(null);
     const [detailTab, setDetailTab] = useState<'all' | 'missing' | 'provided'>('all');
 
-    // filter + sort
     const [sortField, setSortField] = useState<'name' | 'rate' | 'with_epa' | 'missing' | 'avg_score'>('rate');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-    // profile modal
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ username: '', password: '', confirm_password: '', preferred_name: '', first_name: '', last_name: '' });
     const [profileLoading, setProfileLoading] = useState(false);
     const [profileError, setProfileError] = useState('');
     const [profileSuccess, setProfileSuccess] = useState('');
-
-    // ── Auth + data load ───────────────────────────────────────────────────────
 
     useEffect(() => {
         const load = async () => {
@@ -122,8 +116,6 @@ export default function AdminDash() {
         };
         load();
     }, [router]);
-
-    // ── Derived data ───────────────────────────────────────────────────────────
 
     function handleSort(field: typeof sortField) {
         if (sortField === field) {
@@ -164,8 +156,6 @@ export default function AdminDash() {
         return rows;
     }, [selectedAttending, details, detailTab]);
 
-    // ── Shared button styles ───────────────────────────────────────────────────
-
     const headerBtnBase: React.CSSProperties = {
         background: '#fff',
         color: '#374151',
@@ -185,7 +175,7 @@ export default function AdminDash() {
         padding: '8px 12px',
         textAlign: 'left',
         color: sortField === field ? '#374151' : '#495057',
-        fontWeight: 600,          // always 600, no conditional
+        fontWeight: 600,
         borderBottom: '1px solid #dee2e6',
         cursor: 'pointer',
         userSelect: 'none',
@@ -209,24 +199,57 @@ export default function AdminDash() {
         );
     };
 
-    // ── Render ─────────────────────────────────────────────────────────────────
-
     return (
-        <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 20, boxSizing: 'border-box' }}>
-            <div style={{ maxWidth: 'calc(100vw - 40px)', margin: '0 auto' }}>
+        <div className="az-page" style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 20, boxSizing: 'border-box' }}>
+            {/* Responsive overrides — desktop styles above are untouched */}
+            <style jsx>{`
+                @media (max-width: 768px) {
+                    .az-page { padding: 12px !important; }
+                    .az-inner { max-width: 100% !important; }
+
+                    .az-header { flex-direction: column !important; align-items: stretch !important; gap: 14px !important; padding: 18px !important; }
+                    .az-header-actions { width: 100% !important; }
+                    .az-header-btn { flex: 1 1 0 !important; justify-content: center !important; }
+                    .az-title { font-size: 24px !important; }
+                    .az-subtitle { font-size: 13px !important; }
+
+                    .az-metrics-row { grid-template-columns: 1fr !important; gap: 14px !important; }
+                    .az-metrics-left { grid-template-columns: 1fr 1fr !important; gap: 12px !important; }
+                    .az-gauge-wrap { padding: 8px !important; }
+                    
+                    .az-main-content { flex-direction: column !important; max-height: none !important; }
+                    .az-table-panel { flex: 1 1 100% !important; width: 100% !important; max-height: 420px !important; }
+                    .az-detail-panel { flex: 1 1 100% !important; width: 100% !important; }
+
+                    .az-detail-grid-header { display: none !important; }
+                    .az-detail-row { grid-template-columns: 1fr !important; gap: 4px !important; padding: 12px 0 !important; }
+                    .az-detail-row-score { justify-content: flex-start !important; text-align: left !important; }
+
+                    .az-modal { width: 92vw !important; padding: 16px !important; }
+                    .az-modal-namegrid { grid-template-columns: 1fr !important; }
+                }
+                @media (max-width: 480px) {
+                    .az-metrics-left { grid-template-columns: 1fr !important; }
+                    .az-title { font-size: 20px !important; }
+                    .az-header-actions { flex-direction: column !important; }
+                }
+            `}</style>
+
+            <div className="az-inner" style={{ maxWidth: 'calc(100vw - 40px)', margin: '0 auto' }}>
 
                 {/* ── Header ── */}
-                <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="az-header" style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                        <h1 style={{ fontSize: 32, fontWeight: 700, color: '#000', margin: '0 0 8px 0' }}>Admin Dashboard</h1>
-                        <div style={{ color: '#666', fontSize: 16, fontWeight: 400 }}>
+                        <h1 className="az-title" style={{ fontSize: 32, fontWeight: 700, color: '#000', margin: '0 0 8px 0' }}>Admin Dashboard</h1>
+                        <div className="az-subtitle" style={{ color: '#666', fontSize: 16, fontWeight: 400 }}>
                             {currentUser
                                 ? `Welcome, ${currentUser.preferred_name?.trim() || currentUser.first_name} ${currentUser.last_name}. Here's your program-wide EPA overview.`
                                 : 'Welcome to the admin hub. Here is a program-wide EPA provision overview across all attendings.'}
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <div className="az-header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                         <button
+                            className="az-header-btn"
                             onClick={() => { setProfileError(''); setProfileSuccess(''); setProfileForm({ username: currentUser?.username ?? '', password: '', confirm_password: '', preferred_name: currentUser?.preferred_name ?? '', first_name: currentUser?.first_name ?? '', last_name: currentUser?.last_name ?? '' }); setShowProfileModal(true); }}
                             style={headerBtnBase}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 8px rgba(0,0,0,0.08)'; }}
@@ -237,7 +260,7 @@ export default function AdminDash() {
                             </svg>
                             Edit Profile
                         </button>
-                        <button onClick={() => router.push('/')}
+                        <button className="az-header-btn" onClick={() => router.push('/')}
                             style={{ ...headerBtnBase, background: 'linear-gradient(135deg, #ff6b6b, #ee5a52)', color: '#fff', border: '1px solid rgba(55,65,81,0.08)' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 8px rgba(238,90,82,0.4)'; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)'; }}
@@ -252,8 +275,8 @@ export default function AdminDash() {
 
                 {/* ── Profile modal ── */}
                 {showProfileModal && (
-                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                        <div style={{ width: 520, background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,0.3)', maxWidth: '95%' }}>
+                    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16, boxSizing: 'border-box' }}>
+                        <div className="az-modal" style={{ width: 520, background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,0.3)', maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                 <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#374151' }}>Edit Profile</h3>
                                 <button onClick={() => setShowProfileModal(false)} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer', color: '#888' }}>×</button>
@@ -284,14 +307,14 @@ export default function AdminDash() {
                                 finally { setProfileLoading(false); }
                             }}>
                                 <div style={{ display: 'grid', gap: 12 }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                                        <label style={{ fontSize: 13, color: '#333' }}>First name<input value={profileForm.first_name} onChange={e => setProfileForm(p => ({ ...p, first_name: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }} placeholder="First name" /></label>
-                                        <label style={{ fontSize: 13, color: '#333' }}>Last name<input value={profileForm.last_name} onChange={e => setProfileForm(p => ({ ...p, last_name: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }} placeholder="Last name" /></label>
+                                    <div className="az-modal-namegrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                        <label style={{ fontSize: 13, color: '#333' }}>First name<input value={profileForm.first_name} onChange={e => setProfileForm(p => ({ ...p, first_name: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6', boxSizing: 'border-box' }} placeholder="First name" /></label>
+                                        <label style={{ fontSize: 13, color: '#333' }}>Last name<input value={profileForm.last_name} onChange={e => setProfileForm(p => ({ ...p, last_name: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6', boxSizing: 'border-box' }} placeholder="Last name" /></label>
                                     </div>
-                                    <label style={{ fontSize: 13, color: '#333' }}>Username<input value={profileForm.username} onChange={e => setProfileForm(p => ({ ...p, username: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }} placeholder="username" /></label>
-                                    <label style={{ fontSize: 13, color: '#333' }}>New password <span style={{ color: '#9ca3af', fontSize: 12, marginLeft: 6 }}>(leave blank to keep current)</span><input type="password" value={profileForm.password} onChange={e => setProfileForm(p => ({ ...p, password: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }} placeholder="new password" /></label>
-                                    <label style={{ fontSize: 13, color: '#333' }}>Confirm new password<input type="password" value={profileForm.confirm_password} onChange={e => setProfileForm(p => ({ ...p, confirm_password: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }} placeholder="confirm new password" /></label>
-                                    <label style={{ fontSize: 13, color: '#333' }}>Preferred / display name<input value={profileForm.preferred_name} onChange={e => setProfileForm(p => ({ ...p, preferred_name: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6' }} placeholder="Preferred name" /></label>
+                                    <label style={{ fontSize: 13, color: '#333' }}>Username<input value={profileForm.username} onChange={e => setProfileForm(p => ({ ...p, username: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6', boxSizing: 'border-box' }} placeholder="username" /></label>
+                                    <label style={{ fontSize: 13, color: '#333' }}>New password <span style={{ color: '#9ca3af', fontSize: 12, marginLeft: 6 }}>(leave blank to keep current)</span><input type="password" value={profileForm.password} onChange={e => setProfileForm(p => ({ ...p, password: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6', boxSizing: 'border-box' }} placeholder="new password" /></label>
+                                    <label style={{ fontSize: 13, color: '#333' }}>Confirm new password<input type="password" value={profileForm.confirm_password} onChange={e => setProfileForm(p => ({ ...p, confirm_password: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6', boxSizing: 'border-box' }} placeholder="confirm new password" /></label>
+                                    <label style={{ fontSize: 13, color: '#333' }}>Preferred / display name<input value={profileForm.preferred_name} onChange={e => setProfileForm(p => ({ ...p, preferred_name: e.target.value }))} style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 6, border: '1px solid #e6e6e6', boxSizing: 'border-box' }} placeholder="Preferred name" /></label>
                                     {profileError && <div style={{ color: '#b91c1c', fontSize: 13 }}>{profileError}</div>}
                                     {profileSuccess && <div style={{ color: '#166534', fontSize: 13 }}>{profileSuccess}</div>}
                                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
@@ -313,12 +336,10 @@ export default function AdminDash() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
                         {/* ── Metrics: 3 widgets left + gauge right ── */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, marginBottom: 4, alignItems: 'start' }}>
+                        <div className="az-metrics-row" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 20, marginBottom: 4, alignItems: 'center' }}>
 
-                            {/* Left column: 3 stacked widgets */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
+                            <div className="az-metrics-left" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
 
-                                {/* Total attendings */}
                                 <div style={{ background: '#fff', borderRadius: 12, padding: 24, textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
                                     <div style={{ fontSize: 48, fontWeight: 700, color: BORDERS.blue, marginBottom: 8 }}>
                                         {metrics.total}
@@ -328,7 +349,6 @@ export default function AdminDash() {
                                     </div>
                                 </div>
 
-                                {/* Avg EPA score */}
                                 <div style={{ background: '#fff', borderRadius: 12, padding: 24, textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
                                     <div style={{ fontSize: 48, fontWeight: 700, color: BORDERS.green, marginBottom: 8 }}>
                                         {metrics.avgScore !== null ? metrics.avgScore : <span style={{ fontSize: 32, color: '#9ca3af' }}>N/A</span>}
@@ -338,7 +358,6 @@ export default function AdminDash() {
                                     </div>
                                 </div>
 
-                                {/* Reports missing EPA */}
                                 <div style={{ background: '#fff', borderRadius: 12, padding: 24, textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
                                     <div style={{ fontSize: 48, fontWeight: 700, color: metrics.totalMissing > 0 ? BORDERS.red : BORDERS.green, marginBottom: 8 }}>
                                         {metrics.totalMissing}
@@ -350,23 +369,20 @@ export default function AdminDash() {
 
                             </div>
 
-                            {/* Right column: provision gauge */}
-                            <div style={{ borderRadius: 12, padding: '24px 120px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div className="az-gauge-wrap" style={{ borderRadius: 12, padding: '24px 40px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <ProvisionGauge rate={metrics.avgRate} size={250} stroke={16} />
                             </div>
                         </div>
 
                         {/* ── Main content: table + detail panel ── */}
-                        <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', maxHeight: 'calc(100vh - 200px)' }}>
+                        <div className="az-main-content" style={{ display: 'flex', gap: 16, alignItems: 'stretch', maxHeight: 'calc(100vh - 200px)' }}>
 
-                            {/* Attending table */}
-                            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: selectedAttending ? '0 0 440px' : '1 1 0', minWidth: 0, transition: 'flex 0.2s', display: 'flex', flexDirection: 'column' }}>
-                                <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12, fontSize: 15, flexShrink: 0 }}>                                    
+                            <div className="az-table-panel" style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: selectedAttending ? '0 0 440px' : '1 1 0', minWidth: 0, transition: 'flex 0.2s', display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12, fontSize: 15, flexShrink: 0 }}>
                                     EPA Provision by Attending ({filtered.length})
                                 </div>
 
-                                {/* Table header — clickable to sort */}
-                                <div style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'auto', border: '1px solid #e9ecef', borderRadius: 6, fontSize: 13 }}>                                    
+                                <div style={{ flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'auto', border: '1px solid #e9ecef', borderRadius: 6, fontSize: 13 }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                                         <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 1, boxShadow: '0 2px 6px rgba(0,0,0,0.06)' }}>
                                             <tr>
@@ -423,10 +439,8 @@ export default function AdminDash() {
                                 </div>
                             </div>
 
-                            {/* Detail panel */}
                             {selectedAttending && (
-                                <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-                                    {/* Detail header */}
+                                <div className="az-detail-panel" style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                                         <div>
                                             <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 2 }}>Report Detail</div>
@@ -437,7 +451,6 @@ export default function AdminDash() {
                                         </button>
                                     </div>
 
-                                    {/* Mini metrics */}
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
                                         {[
                                             { label: 'Reports With Trainees', value: selectedAttending.reports_with_trainees, color: BORDERS.blue },
@@ -451,7 +464,6 @@ export default function AdminDash() {
                                         ))}
                                     </div>
 
-                                    {/* Tabs */}
                                     <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
                                         {(['all', 'missing', 'provided'] as const).map(t => (
                                             <button key={t} onClick={() => setDetailTab(t)} style={{
@@ -467,29 +479,27 @@ export default function AdminDash() {
                                         ))}
                                     </div>
 
-                                    {/* Report rows header */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 8, padding: '5px 0', borderBottom: `2px solid ${COLORS.purple}`, fontSize: 11, color: '#9ca3af', fontWeight: 600, flexShrink: 0 }}>
+                                    <div className="az-detail-grid-header" style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 8, padding: '5px 0', borderBottom: `2px solid ${COLORS.purple}`, fontSize: 11, color: '#9ca3af', fontWeight: 600, flexShrink: 0 }}>
                                         <span>Procedure / Date / ReportID</span>
                                         <span>Trainee (PGY)</span>
                                         <span style={{ textAlign: 'right' }}>EPA Score</span>
                                     </div>
 
-                                    {/* Scrollable report rows */}
                                     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                                         {detailRows.length === 0 ? (
                                             <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>No reports in this category.</div>
                                         ) : detailRows.map((r, i) => (
-                                            <div key={`${r.report_id}-${r.trainee.user_id}-${i}`} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 8, padding: '9px 0', borderBottom: '1px solid #f3f4f6', alignItems: 'center' }}>
+                                            <div key={`${r.report_id}-${r.trainee.user_id}-${i}`} className="az-detail-row" style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 8, padding: '9px 0', borderBottom: '1px solid #f3f4f6', alignItems: 'center' }}>
                                                 <div>
                                                     <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{r.procedure_desc || 'Unknown procedure'}</div>
                                                     <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
                                                         {r.create_date ? new Date(r.create_date.replace('Z', '')).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'} · #{r.report_id}
-                                                    </div>                                                
+                                                    </div>
                                                 </div>
                                                 <span style={{ fontSize: 13, color: '#6b7280' }}>
                                                     {r.trainee.name}{r.trainee.pgy ? ` · ${formatPGY(r.trainee.pgy, r.trainee.pgy_note)}` : ''}
                                                 </span>
-                                                <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
+                                                <div className="az-detail-row-score" style={{ textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
                                                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: r.trainee.epa_provided ? BORDERS.green : BORDERS.red, flexShrink: 0, display: 'inline-block' }} />
                                                     <span style={{ fontSize: 13, color: r.trainee.epa_provided ? '#111827' : '#9ca3af' }}>
                                                         {r.trainee.epa_score !== null ? `${r.trainee.epa_score} / 5` : 'Missing'}

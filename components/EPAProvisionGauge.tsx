@@ -15,13 +15,14 @@ function rateColor(rate: number | null): string {
 
 interface ProvisionGaugeProps {
     rate: number | null;
-    size?: number;       // diameter in px (default 180)
-    stroke?: number;     // ring thickness (default 14)
+    size?: number;        // max diameter in px (default 360) — the ring scales DOWN to fit its container, never bigger than this
+    stroke?: number;      // ring thickness, in the same units as `size` (default 14)
+    className?: string;   // optional — lets a parent further clamp max-width via CSS (e.g. on mobile)
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function ProvisionGauge({ rate, size = 360, stroke = 14 }: ProvisionGaugeProps) {
+export default function ProvisionGauge({ rate, size = 360, stroke = 14, className }: ProvisionGaugeProps) {
     const r = (size - stroke) / 2;
     const circ = 2 * Math.PI * r;
     const pct = rate ?? 0;
@@ -32,25 +33,42 @@ export default function ProvisionGauge({ rate, size = 360, stroke = 14 }: Provis
         : rate >= 50 ? 'rgba(255, 226, 108, 0.2)'
         : 'rgba(255, 126, 112, 0.15)';
 
+    const cx = size / 2;
+    const cy = size / 2;
+
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0 }}>
-            {/* Ring */}
-            <div style={{ position: 'relative', width: size, height: size }}>
-                <svg
-                    width={size}
-                    height={size}
-                    style={{ transform: 'rotate(-90deg)', display: 'block' }}
-                >
+        <div
+            className={className}
+            style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                maxWidth: size,
+                aspectRatio: '1 / 1',
+                margin: '0 auto',
+            }}
+        >
+            {/* Ring — viewBox-based so it scales fluidly with its container instead of rendering at a fixed pixel size */}
+            <svg
+                viewBox={`0 0 ${size} ${size}`}
+                width="100%"
+                height="100%"
+                style={{ display: 'block' }}
+            >
+                {/* Rotated group: white fill + track + progress arc */}
+                <g style={{ transform: 'rotate(-90deg)', transformOrigin: `${cx}px ${cy}px` }}>
                     {/* White fill — radius extended to inner edge of the stroke */}
                     <circle
-                        cx={size / 2} cy={size / 2} r={r + stroke / 2}
+                        cx={cx} cy={cy} r={r + stroke / 2}
                         fill="#fff"
                         stroke="none"
                     />
 
                     {/* Track background */}
                     <circle
-                        cx={size / 2} cy={size / 2} r={r}
+                        cx={cx} cy={cy} r={r}
                         stroke={trackColor}
                         strokeWidth={stroke}
                         fill="none"
@@ -58,7 +76,7 @@ export default function ProvisionGauge({ rate, size = 360, stroke = 14 }: Provis
 
                     {/* Progress */}
                     <circle
-                        cx={size / 2} cy={size / 2} r={r}
+                        cx={cx} cy={cy} r={r}
                         fill="none"
                         stroke={color}
                         strokeWidth={stroke}
@@ -66,39 +84,35 @@ export default function ProvisionGauge({ rate, size = 360, stroke = 14 }: Provis
                         strokeLinecap="round"
                         style={{ transition: 'stroke-dasharray 0.7s ease, stroke 0.4s ease' }}
                     />
-                </svg>
+                </g>
 
-                {/* Center text */}
-                <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 2,
-                }}>
-                    <span style={{ fontSize: size * 0.2, fontWeight: 700, color, lineHeight: 1 }}>
-                        {rate !== null ? `${rate}%` : '—'}
-                    </span>
+                {/* Center text — lives inside the SVG so it scales proportionally with the ring at any rendered size, no separate font-size logic needed */}
+                <text
+                    x={cx}
+                    y={cy - size * 0.02}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={size * 0.2}
+                    fontWeight={700}
+                    fill={color}
+                >
+                    {rate !== null ? `${rate}%` : '—'}
+                </text>
 
-                    {/* Label inside ring */}
-                    <div style={{
-                        marginTop: 12,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: '#000',
-                        textTransform: 'uppercase',
-                        textAlign: 'center',
-                        letterSpacing: '0.04em',
-                        lineHeight: 1.4,
-                    }}>
-                        Avg EPA Provision<br />Rate
-                    </div>
-                </div>
-            </div>
-
-
+                <text
+                    x={cx}
+                    y={cy + size * 0.14}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={size * 0.033}
+                    fontWeight={600}
+                    fill="#000"
+                    style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}
+                >
+                    <tspan x={cx} dy="0">Avg EPA Provision</tspan>
+                    <tspan x={cx} dy={size * 0.045}>Rate</tspan>
+                </text>
+            </svg>
         </div>
     );
 }

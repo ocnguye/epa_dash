@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mysql from 'mysql2/promise';
+import { requireUser } from '@/lib/requireUser';
 
 export async function PATCH(
     request: NextRequest,
@@ -25,15 +26,11 @@ export async function PATCH(
         });
 
         // Authenticate user from cookie (used as requested_by)
-        const username = request.cookies.get('username')?.value;
-        if (!username) {
-            await connection.end();
-            return NextResponse.json({ success: false, message: 'Not authenticated' }, { status: 401 });
-        }
+        const me = await requireUser(['trainee']);
 
         const [userRows] = await connection.execute(
             'SELECT user_id FROM users WHERE username = ?',
-            [username]
+            [me.username]
         );
         const user = Array.isArray(userRows) && userRows[0] ? (userRows as any)[0] : null;
         const requestedBy = user ? Number(user.user_id) : null;

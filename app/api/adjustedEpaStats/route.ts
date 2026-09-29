@@ -35,6 +35,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import mysql from 'mysql2/promise';
+import { requireUser } from '@/lib/requireUser';
 
 const getConnection = async () =>
     mysql.createConnection({
@@ -64,20 +65,14 @@ interface ProcedureMedianRow {
 
 export async function GET(req: NextRequest) {
     try {
-        const username = req.cookies.get('username')?.value;
-        if (!username) {
-            return NextResponse.json(
-                { success: false, message: 'Not authenticated' },
-                { status: 401 }
-            );
-        }
+        const me = await requireUser(['attending']);
 
         const connection = await getConnection();
 
         // ── Auth: any authenticated user may call this endpoint ───────────────
         const [authRows] = await connection.execute(
             'SELECT role, user_id FROM users WHERE username = ?',
-            [username]
+            [me.username]
         );
         const auth = Array.isArray(authRows) && authRows[0]
             ? (authRows as any)[0]

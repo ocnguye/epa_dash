@@ -1,32 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
+import { NextResponse } from 'next/server';
+import { pool } from '@/lib/db';
+import { requireUser, AuthError } from '@/lib/requireUser';
 
-const getConnection = async () => mysql.createConnection({
-    host: process.env.AWS_RDS_HOST,
-    user: process.env.AWS_RDS_USER,
-    password: process.env.AWS_RDS_PWD,
-    database: process.env.AWS_RDS_DB || 'powerscribe',
-});
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
     try {
-        const username = req.cookies.get('username')?.value;
-        if (!username) return NextResponse.json({ success: false, message: 'Not authenticated' }, { status: 401 });
+        const me = await requireUser(['attending']);
 
-        const connection = await getConnection();
-
-        const [authRows] = await connection.execute('SELECT role, user_id FROM users WHERE username = ?', [username]);
-        const auth = Array.isArray(authRows) && authRows[0] ? (authRows as any)[0] : null;
-        if (!auth) {
-            await connection.end();
-            return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
-        }
-        if (String(auth.role) !== 'attending') {
-            await connection.end();
-            return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
-        }
-
-        const [evaluatorRows] = await connection.execute(
+        const [evaluatorRows] = await pool.execute(
             `SELECT
                 COALESCE(ROUND(AVG(es.epa_score), 2), 0) AS evaluator_avg_epa,
                 COUNT(DISTINCT rp_trainee.report_id) AS evaluator_report_count
@@ -38,22 +21,22 @@ export async function GET(req: NextRequest) {
                 ON es.report_participant_id = rp_trainee.id
             WHERE rp_attending.user_id = ?
             AND rp_attending.role = 'attending'`,
-            [auth.user_id]
+            [me.userId],
         );
 
-        const evaluatorStats = Array.isArray(evaluatorRows) && evaluatorRows[0]
-            ? (evaluatorRows as any)[0]
-            : { evaluator_avg_epa: 0, evaluator_report_count: 0 };
-
-        await connection.end();
+        const stats: any = (evaluatorRows as any[])[0]
+            ?? { evaluator_avg_epa: 0, evaluator_report_count: 0 };
 
         return NextResponse.json({
             success: true,
-            evaluator_avg_epa: parseFloat(evaluatorStats.evaluator_avg_epa) || null,
-            evaluator_report_count: parseInt(evaluatorStats.evaluator_report_count) || 0,
+            evaluator_avg_epa: parseFloat(stats.evaluator_avg_epa) || null,
+            evaluator_report_count: parseInt(stats.evaluator_report_count) || 0,
         });
-
     } catch (err) {
-        return NextResponse.json({ success: false, message: 'Server error', error: (err as Error).message }, { status: 500 });
+        if (err instanceof AuthError) {
+            return NextResponse.json({ success: false, message: err.message }, { status: err.status });
+        }
+        console.error('Evaluator stats error:', (err as Error).message);
+        return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 });
     }
 }

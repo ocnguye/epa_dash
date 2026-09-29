@@ -1,35 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
+import { NextResponse } from 'next/server';
+import { pool } from '@/lib/db';
+import { requireUser, AuthError } from '@/lib/requireUser';
 
-const getConnection = async () => mysql.createConnection({
-    host: process.env.AWS_RDS_HOST,
-    user: process.env.AWS_RDS_USER,
-    password: process.env.AWS_RDS_PWD || process.env.AWS_RDS_PASS,
-    database: process.env.AWS_RDS_DB || 'powerscribe',
-});
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
     try {
-        const username = req.cookies.get('username')?.value;
-        if (!username) return NextResponse.json({ success: false, message: 'Not authenticated' }, { status: 401 });
+        await requireUser(['attending']);
 
-        const connection = await getConnection();
-
-        // verify requester role
-        const [authRows] = await connection.execute('SELECT role, user_id FROM users WHERE username = ?', [username]);
-        const auth = Array.isArray(authRows) && authRows[0] ? (authRows as any)[0] : null;
-        if (!auth) {
-            await connection.end();
-            return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
-        }
-        if (String(auth.role) !== 'attending') {
-            await connection.end();
-            return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
-        }
-
-        // Return list of trainees with basic EPA summary
-        // Join reports to compute average EPA per trainee (coerce numeric values)
-        const [rows] = await connection.execute(
+        const [rows] = await pool.execute(
             `SELECT
                 u.user_id,
                 u.username,
@@ -38,20 +18,22 @@ export async function GET(req: NextRequest) {
                 u.preferred_name,
                 u.pgy,
                 u.role,
-                     COALESCE(ROUND(AVG(es.epa_score),2),0) AS avg_epa,
-                     COUNT(DISTINCT rp.report_id) AS report_count
-                 FROM users u
-                 LEFT JOIN report_participants rp ON rp.user_id = u.user_id AND rp.role = 'trainee'
-                 LEFT JOIN epa_scores es ON es.report_participant_id = rp.id
-             WHERE u.role != 'attending'
-                AND u.role != 'admin'
+                COALESCE(ROUND(AVG(es.epa_score), 2), 0) AS avg_epa,
+                COUNT(DISTINCT rp.report_id) AS report_count
+             FROM users u
+             LEFT JOIN report_participants rp ON rp.user_id = u.user_id AND rp.role = 'trainee'
+             LEFT JOIN epa_scores es ON es.report_participant_id = rp.id
+             WHERE u.role = 'trainee'
              GROUP BY u.user_id
-             ORDER BY avg_epa DESC, u.pgy DESC`);
-
-        await connection.end();
+             ORDER BY avg_epa DESC, u.pgy DESC`
+        );
 
         return NextResponse.json({ success: true, trainees: rows });
     } catch (err) {
-        return NextResponse.json({ success: false, message: 'Server error', error: (err as Error).message }, { status: 500 });
+        if (err instanceof AuthError) {
+            return NextResponse.json({ success: false, message: err.message }, { status: err.status });
+        }
+        console.error('Trainees list error:', (err as Error).message);
+        return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 });
     }
 }

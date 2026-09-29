@@ -162,7 +162,7 @@ export default function LoginPage() {
                     {PASSWORD_LOGIN_ENABLED && (
                         <form onSubmit={handleSubmit} style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid #eee' }}>
                             <h3 style={{ textAlign: 'center', marginBottom: 20, color: '#0000008b', fontSize: 14, fontWeight: 200 }}>
-                                Development login
+                                Development Login
                             </h3>
                             <label htmlFor="username" style={labelStyle}>
                                 Username

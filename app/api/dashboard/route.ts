@@ -1,24 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { getSession } from '@/lib/session';
+import { requireUser, AuthError } from '@/lib/requireUser';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
     try {
-        const session = await getSession();
-        const username = session.username;
-        if (!username) {
-            return NextResponse.json(
-                { success: false, message: 'Not authenticated' },
-                { status: 401 }
-            );
-        }
+        const me = await requireUser();
 
-        // ── Authenticated user ────────────────────────────────────────────────
+        // ── Authenticated user ──
         const [userRows] = await pool.execute(
             `SELECT user_id, first_name, last_name, role, username, preferred_name, pgy, pgy_note
-            FROM users
-            WHERE username = ?`,
-            [username]
+             FROM users
+             WHERE user_id = ?`,
+            [me.userId]
         );
         if (!Array.isArray(userRows) || userRows.length === 0) {
             return NextResponse.json(
@@ -26,6 +22,7 @@ export async function GET(req: NextRequest) {
                 { status: 404 }
             );
         }
+
         const rawUser = userRows[0] as any;
         const user = {
             user_id:        Number(rawUser.user_id),
@@ -324,6 +321,12 @@ export async function GET(req: NextRequest) {
         });
 
     } catch (error) {
+        if (error instanceof AuthError) {
+            return NextResponse.json(
+                { success: false, message: error.message },
+                { status: error.status }
+            );
+        }
         console.error('Dashboard API error:', error);
         return NextResponse.json(
             { success: false, message: 'Server error' },

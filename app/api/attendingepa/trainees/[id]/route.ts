@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mysql from 'mysql2/promise';
 import { resolveProcedureAliasFromQuery, getProcTypesByIds } from '@/lib/procAliasLookup';
+import { requireUser } from '@/lib/requireUser';
 
 const getConnection = async () => mysql.createConnection({
     host: process.env.AWS_RDS_HOST,
@@ -13,12 +14,11 @@ export async function GET(req: NextRequest, context: any) {
     const { params } = context || {};
     const resolvedParams = params && typeof (params as any).then === 'function' ? await params : params;
     try {
-        const username = req.cookies.get('username')?.value;
-        if (!username) return NextResponse.json({ success: false, message: 'Not authenticated' }, { status: 401 });
+        const me = await requireUser(['attending']);
 
         const connection = await getConnection();
 
-        const [authRows] = await connection.execute('SELECT role, user_id FROM users WHERE username = ?', [username]);
+        const [authRows] = await connection.execute('SELECT role, user_id FROM users WHERE username = ?', [me.username]);
         const auth = Array.isArray(authRows) && (authRows as any)[0] ? (authRows as any)[0] : null;
         if (!auth) {
             await connection.end();

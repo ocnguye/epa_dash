@@ -270,6 +270,27 @@ export default function TraineePage() {
 
   return (
       <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 24, boxSizing: 'border-box' }}>
+        <style jsx>{`
+            @media (max-width: 768px) {
+                .az-page { padding: 12px !important; }
+
+                .az-header { flex-direction: column !important; align-items: stretch !important; gap: 14px !important; padding: 18px !important; }
+                .az-header-actions { width: 100% !important; }
+                .az-header-btn { flex: 1 1 0 !important; justify-content: center !important; min-height: 44px !important; }
+                .az-title { font-size: 22px !important; overflow-wrap: anywhere !important; }
+                .az-subtitle { font-size: 13px !important; line-height: 1.5 !important; }
+
+                /* minmax(0,1fr) so the wide scrolling bar chart can't blow out the track */
+                .az-trainee-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 14px !important; }
+
+                .az-line-box { flex: none !important; height: 280px !important; }
+                .az-bar-head { flex-wrap: wrap !important; gap: 8px !important; }
+                .az-bar-canvas { height: 320px !important; }
+            }
+            @media (max-width: 480px) {
+                .az-title { font-size: 20px !important; }
+            }
+        `}</style>
           <div style={{ width: '100%', margin: 0 }}>
               {/* Header */}
               <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

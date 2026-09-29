@@ -26,9 +26,10 @@ export default function DashboardToggle({ className, epaPath = '/epadash', rprPa
   const isEpa = pathname.startsWith(epaPath);
 
   return (
+    <>
     <button
       onClick={onClick}
-      className={className}
+      className={`az-toggle-btn ${className ?? ''}`.trim()}
       style={{
         // always use the lighter blue so the control is visually prominent and consistent
         background: 'linear-gradient(135deg, #60a5fa, #3b82f6)',
@@ -65,5 +66,11 @@ export default function DashboardToggle({ className, epaPath = '/epadash', rprPa
       </svg>
       <span>{isEpa ? 'Switch to RPR' : 'Switch to EPA'}</span>
     </button>
+    <style jsx global>{`
+      @media (max-width: 768px) {
+        .az-toggle-btn { width: 100% !important; justify-content: center !important; min-height: 44px !important; box-sizing: border-box !important; }
+      }
+    `}</style>
+      </>
   );
 }

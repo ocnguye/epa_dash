@@ -153,6 +153,40 @@ export default function AttendingPage() {
 
     return (
         <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 20, boxSizing: 'border-box' }}>
+            <style jsx>{`
+                @media (max-width: 768px) {
+                    .az-page { padding: 12px !important; }
+                    .az-inner { max-width: 100% !important; }
+
+                    .az-header { flex-direction: column !important; align-items: stretch !important; gap: 14px !important; padding: 18px !important; }
+                    .az-header-actions { width: 100% !important; flex-wrap: wrap !important; }
+                    .az-toggle-wrap { flex: 1 1 100% !important; }
+                    .az-header-btn { flex: 1 1 0 !important; justify-content: center !important; min-height: 44px !important; }
+                    .az-title { font-size: 24px !important; }
+                    .az-subtitle { font-size: 13px !important; }
+
+                    .az-filter-row { flex-direction: column !important; align-items: stretch !important; gap: 12px !important; }
+                    .az-filter-card { width: 100% !important; box-sizing: border-box !important; justify-content: space-between !important; }
+                    .az-filter-card select { font-size: 16px !important; min-height: 44px !important; }
+
+                    /* fixed 620px row -> stacked; children need explicit heights once the parent is auto */
+                    .az-chart-row { flex-direction: column !important; height: auto !important; }
+                    .az-chart-panel { flex: none !important; width: 100% !important; height: 380px !important; box-sizing: border-box !important; }
+                    .az-sw-col { width: 100% !important; }
+                    .az-sw-panel { flex: none !important; }
+                    .az-sw-item { flex: none !important; height: 280px !important; }
+
+                    .az-table-card { overflow-x: auto !important; }
+
+                    .az-modal { width: 92vw !important; padding: 16px !important; }
+                    .az-modal-namegrid { grid-template-columns: 1fr !important; }
+                    .az-modal input { font-size: 16px !important; } /* stops iOS zoom-on-focus */
+                }
+                @media (max-width: 480px) {
+                    .az-title { font-size: 20px !important; }
+                    .az-header-actions { flex-direction: column !important; }
+                }
+            `}</style>
         <div style={{ maxWidth: 'calc(100vw - 40px)', margin: '0 auto' }}>
             <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>

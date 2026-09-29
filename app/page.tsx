@@ -1,7 +1,38 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+
+const PASSWORD_LOGIN_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PASSWORD_LOGIN === 'true';
+
+const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: 8,
+    marginBottom: 15,
+    border: '1px solid #ccc',
+    borderRadius: 4,
+    color: '#0000008b',
+};
+
+const labelStyle: React.CSSProperties = {
+    display: 'block',
+    marginBottom: 5,
+    color: '#000',
+    fontSize: 16,
+    fontWeight: 600,
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+    width: '100%',
+    padding: 10,
+    background: '#c8ceee',
+    color: '#000',
+    border: 'none',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: 16,
+};
 
 export default function LoginPage() {
     const [username, setUsername] = useState('');
@@ -10,7 +41,30 @@ export default function LoginPage() {
     const [preferredDashboard, setPreferredDashboard] = useState<'epadash' | 'rprdash'>('epadash');
     const router = useRouter();
 
-     const handleSubmit = async (e: React.FormEvent) => {
+    // If Emory's IdP sent us back with an error, show it here
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const err = params.get('error');
+        if (err === 'not_authorized') {
+            setError('Your Emory account is not registered for this dashboard. Contact an administrator.');
+        } else if (err === 'sso_failed') {
+            setError('Sign-in with Emory failed. Please try again.');
+        } else if (err) {
+            setError('Sign-in failed. Please try again.');
+        }
+    }, []);
+
+    const rememberDashboard = () => {
+        sessionStorage.setItem('preferredDashboard', preferredDashboard);
+    };
+
+    const handleSSO = () => {
+        setError('');
+        rememberDashboard();
+        window.location.href = '/api/auth/saml/login';
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         try {
@@ -20,34 +74,10 @@ export default function LoginPage() {
                 body: JSON.stringify({ username, password }),
             });
             const data = await res.json();
-                if (data.success) {
-                // After successful login, check role and route appropriately
-                try {
-                    const meRes = await fetch('/api/dashboard');
-                    if (meRes.ok) {
-                        const meJson = await meRes.json();
-                        const role = meJson?.user?.role;
-                            if (role === 'admin') {
-                                router.push('/admindash');
-                            } else if (role === 'attending') {
-                                if (preferredDashboard === 'rprdash') router.push('/attendingrpr');
-                                else router.push('/attendingepa');
-                            } else {
-                                if (preferredDashboard === 'rprdash') router.push('/rprdash');
-                                else router.push('/epadash');
-                            }
-                    } else {
-                        // Fallback to trainee dashboard
-                        if (preferredDashboard === 'rprdash') router.push('/rprdash');
-                        else router.push('/epadash');
-                    }
-                } catch (err) {
-                    // network or other error; fallback
-                    if (preferredDashboard === 'rprdash') router.push('/rprdash');
-                    else router.push('/epadash');
-                }
+            if (data.success) {
+                rememberDashboard();
+                router.push('/post-login');
             } else {
-                // Provide a clear credential mismatch message for failed logins
                 setError('Username and password do not match');
             }
         } catch (err) {
@@ -97,118 +127,80 @@ export default function LoginPage() {
                         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                     }}
                 >
-
-                    <h3 style={{ textAlign: 'center', marginBottom: 20, color: '#0000008b', fontSize: 14, fontWeight: 200 }}>
-                        Please enter your credentials
-                    </h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-                            <label style={{ fontSize: 16, fontWeight: 600, color: '#000', marginBottom: 4 }}>Dashboard</label>
-                            <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
-                                <select
-                                    value={preferredDashboard}
-                                    onChange={e => setPreferredDashboard(e.target.value as 'epadash' | 'rprdash')}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px 34px 8px 10px',
-                                        borderRadius: 4,
-                                        border: '1px solid #ccc',
-                                        color: '#0000008b',
-                                        fontSize: 16,
-                                        fontWeight: 400,
-                                        WebkitAppearance: 'none',
-                                        MozAppearance: 'none',
-                                        appearance: 'none'
-                                    }}
-                                >
-                                    <option value="epadash">EPA Dashboard</option>
-                                    <option value="rprdash">RPR Dashboard</option>
-                                </select>
-                                <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                    <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                            </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+                        <label style={{ fontSize: 16, fontWeight: 600, color: '#000', marginBottom: 4 }}>Dashboard</label>
+                        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+                            <select
+                                value={preferredDashboard}
+                                onChange={e => setPreferredDashboard(e.target.value as 'epadash' | 'rprdash')}
+                                style={{
+                                    width: '100%',
+                                    padding: '8px 34px 8px 10px',
+                                    borderRadius: 4,
+                                    border: '1px solid #ccc',
+                                    color: '#0000008b',
+                                    fontSize: 16,
+                                    fontWeight: 400,
+                                    WebkitAppearance: 'none',
+                                    MozAppearance: 'none',
+                                    appearance: 'none'
+                                }}
+                            >
+                                <option value="epadash">EPA Dashboard</option>
+                                <option value="rprdash">RPR Dashboard</option>
+                            </select>
+                            <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
                         </div>
-                    <form onSubmit={handleSubmit}>
-                        <label
-                            htmlFor="username"
-                            style={{
-                                display: 'block',
-                                marginBottom: 5,
-                                color: '#000',
-                                fontSize: 16,
-                                fontWeight: 600,
-                            }}
-                        >
-                            Username
-                        </label>
-                        <input
-                            type="text"
-                            id="username"
-                            name="username"
-                            required
-                            value={username}
-                            onChange={e => { setUsername(e.target.value); if (error) setError(''); }}
-                            style={{
-                                width: '100%',
-                                padding: 8,
-                                marginBottom: 15,
-                                border: '1px solid #ccc',
-                                borderRadius: 4,
-                                color: '#0000008b',
-                            }}
-                        />
+                    </div>
 
-                        <label
-                            htmlFor="password"
-                            style={{
-                                display: 'block',
-                                marginBottom: 5,
-                                color: '#000',
-                                fontSize: 16,
-                                fontWeight: 600,
-                            }}
-                        >
-                            Password
-                        </label>
-                        <input
-                            type="password"
-                            id="password"
-                            name="password"
-                            required
-                            value={password}
-                            onChange={e => { setPassword(e.target.value); if (error) setError(''); }}
-                            style={{
-                                width: '100%',
-                                padding: 8,
-                                marginBottom: 15,
-                                border: '1px solid #ccc',
-                                borderRadius: 4,
-                                color: '#0000008b',
-                            }}
-                        />
+                    <button type="button" onClick={handleSSO} style={primaryButtonStyle}>
+                        Sign in with Emory
+                    </button>
 
-                        <button
-                            type="submit"
-                            style={{
-                                width: '100%',
-                                padding: 10,
-                                background: '#c8ceee',
-                                color: '#000',
-                                border: 'none',
-                                borderRadius: 4,
-                                cursor: 'pointer',
-                                fontWeight: 600,
-                                fontSize: 16,
-                            }}
-                        >
-                            Login
-                        </button>
-                        {error && (
-                            <div role="alert" style={{ color: '#b91c1c', marginTop: 12, fontSize: 13 }}>
-                                {error}
-                            </div>
-                        )}
-                    </form>
+                    {PASSWORD_LOGIN_ENABLED && (
+                        <form onSubmit={handleSubmit} style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid #eee' }}>
+                            <h3 style={{ textAlign: 'center', marginBottom: 20, color: '#0000008b', fontSize: 14, fontWeight: 200 }}>
+                                Development login
+                            </h3>
+                            <label htmlFor="username" style={labelStyle}>
+                                Username
+                            </label>
+                            <input
+                                type="text"
+                                id="username"
+                                name="username"
+                                required
+                                value={username}
+                                onChange={e => { setUsername(e.target.value); if (error) setError(''); }}
+                                style={inputStyle}
+                            />
+
+                            <label htmlFor="password" style={labelStyle}>
+                                Password
+                            </label>
+                            <input
+                                type="password"
+                                id="password"
+                                name="password"
+                                required
+                                value={password}
+                                onChange={e => { setPassword(e.target.value); if (error) setError(''); }}
+                                style={inputStyle}
+                            />
+
+                            <button type="submit" style={primaryButtonStyle}>
+                                Login
+                            </button>
+                        </form>
+                    )}
+
+                    {error && (
+                        <div role="alert" style={{ color: '#b91c1c', marginTop: 12, fontSize: 13 }}>
+                            {error}
+                        </div>
+                    )}
                 </div>
             </div>
             {/* Right side: Gradient and image */}

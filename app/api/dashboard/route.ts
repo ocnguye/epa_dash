@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
+import { pool } from '@/lib/db';
+import { getSession } from '@/lib/session';
 
 export async function GET(req: NextRequest) {
     try {
-        const username = req.cookies.get('username')?.value;
+        const session = await getSession();
+        const username = session.username;
         if (!username) {
             return NextResponse.json(
                 { success: false, message: 'Not authenticated' },
@@ -11,22 +13,14 @@ export async function GET(req: NextRequest) {
             );
         }
 
-        const connection = await mysql.createConnection({
-            host:     process.env.AWS_RDS_HOST,
-            user:     process.env.AWS_RDS_USER,
-            password: process.env.AWS_RDS_PWD,
-            database: process.env.AWS_RDS_DB || 'powerscribe',
-        });
-
         // ── Authenticated user ────────────────────────────────────────────────
-        const [userRows] = await connection.execute(
+        const [userRows] = await pool.execute(
             `SELECT user_id, first_name, last_name, role, username, preferred_name, pgy, pgy_note
             FROM users
             WHERE username = ?`,
             [username]
         );
         if (!Array.isArray(userRows) || userRows.length === 0) {
-            await connection.end();
             return NextResponse.json(
                 { success: false, message: 'User not found' },
                 { status: 404 }
@@ -47,6 +41,7 @@ export async function GET(req: NextRequest) {
         };
         const user_id = user.user_id;
 
+
         // ── Procedures for this trainee ───────────────────────────────────────
         //
         // All personnel names are resolved exclusively through report_participants
@@ -63,7 +58,7 @@ export async function GET(req: NextRequest) {
         //
         // complexity         – pulled from proc_types via a join on ProcedureCodeList.
         //                      ProcedureCodeList is treated as a single code (1:1).
-        const [procedures] = await connection.execute(
+        const [procedures] = await pool.execute(
             `SELECT
                 r.ReportID                                                        AS report_id,
                 DATE_FORMAT(r.CreateDate, '%Y-%m-%d')                            AS create_date,
@@ -158,7 +153,7 @@ export async function GET(req: NextRequest) {
         //   attending participant → same report → trainee participant → epa_scores
         // which correctly attributes the *trainee's* score to the *attending*
         // who evaluated them, without conflating them.
-        const [evaluatorStatsRows] = await connection.execute(
+        const [evaluatorStatsRows] = await pool.execute(
             `SELECT
                 rp_att.user_id                        AS attending_user_id,
                 ROUND(AVG(es.epa_score), 6)           AS mean_score,
@@ -224,7 +219,7 @@ export async function GET(req: NextRequest) {
         });
 
         // ── Trainee aggregate stats ───────────────────────────────────────────
-        const [statsRows] = await connection.execute(
+        const [statsRows] = await pool.execute(
             `SELECT
                 COALESCE(ROUND(AVG(es_main.epa_score), 2), 0)          AS avg_epa,
                 COALESCE(ROUND(AVG(r.fluoroscopy_time_minutes), 2), 0) AS avg_fluoro_minutes,
@@ -307,15 +302,13 @@ export async function GET(req: NextRequest) {
                     );
                 }
 
-                const [cohortRows] = await connection.execute(cohortSql, cohortParams);
+                const [cohortRows] = await pool.execute(cohortSql, cohortParams);
                 cohortAvg = Number((cohortRows as any[])[0]?.cohort_avg_epa) || 0;
             }
         } catch (e) {
             console.error('Cohort avg query failed:', e);
         }
         formattedStats.cohort_avg_epa = cohortAvg;
-
-        await connection.end();
 
         return NextResponse.json({
             user,
@@ -333,7 +326,7 @@ export async function GET(req: NextRequest) {
     } catch (error) {
         console.error('Dashboard API error:', error);
         return NextResponse.json(
-            { success: false, message: 'Server error', error: (error as Error).message },
+            { success: false, message: 'Server error' },
             { status: 500 }
         );
     }

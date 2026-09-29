@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
-
-const getConnection = async () => mysql.createConnection({
-    host: process.env.AWS_RDS_HOST,
-    user: process.env.AWS_RDS_USER,
-    password: process.env.AWS_RDS_PWD,
-    database: process.env.AWS_RDS_DB || 'powerscribe',
-});
+import { pool } from '@/lib/db';
+import { getSession } from '@/lib/session';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,11 +9,8 @@ interface AttendingProvisionRow {
     first_name: string;
     last_name: string;
     preferred_name: string | null;
-    // Reports where this attending was present and at least one trainee existed
     reports_with_trainees: number;
-    // Of those, reports where every trainee got at least one EPA score
     reports_with_epa: number;
-    // Aggregate EPA score stats across all trainee participants they supervised
     avg_epa_score: number | null;
     total_epa_scores_given: number;
 }
@@ -35,66 +26,47 @@ interface ReportDetailRow {
     trainee_preferred_name: string | null;
     trainee_pgy: number | null;
     trainee_pgy_note: string | null;
-    epa_score: number | null; // null = no EPA given for this trainee on this report
+    epa_score: number | null;
 }
 
 // ─── GET /api/admin/epa-provision ────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
     try {
-        const username = req.cookies.get('username')?.value;
+        const session = await getSession();
+        const username = session.username;
         if (!username) {
             return NextResponse.json({ success: false, message: 'Not authenticated' }, { status: 401 });
         }
 
-        const connection = await getConnection();
-
-        // Auth check — admin only
-        const [authRows] = await connection.execute(
+        // Auth check — admin only. Read role fresh from the DB rather than
+        // trusting session.role, since this route grants access to every
+        // trainee's data — worth the one extra query for an admin-only page.
+        const [authRows] = await pool.execute(
             'SELECT role FROM users WHERE username = ?',
             [username]
         );
         const auth = Array.isArray(authRows) && authRows[0] ? (authRows as any)[0] : null;
         if (!auth) {
-            await connection.end();
             return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
         }
         if (String(auth.role) !== 'admin') {
-            await connection.end();
             return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
         }
 
         // ── Query 1: Per-attending provision summary ──────────────────────────
-        //
-        // For each attending, find all reports they participated in that also
-        // had at least one trainee. Then determine how many of those reports
-        // had EPA scores issued to every trainee on the report.
-        //
-        // "Provision rate" = reports_with_epa / reports_with_trainees * 100
-        //
-        // A report counts as "EPA provided" if ALL trainees on that report
-        // received at least one EPA score — partial coverage counts as missing.
-
-        const [summaryRows] = await connection.execute(`
+        const [summaryRows] = await pool.execute(`
             SELECT
                 u.user_id                                           AS attending_user_id,
                 u.first_name,
                 u.last_name,
                 u.preferred_name,
-
-                -- Total reports this attending was on that had ≥1 trainee
                 COUNT(DISTINCT rp_att.report_id)                   AS reports_with_trainees,
-
-                -- Reports where every trainee got ≥1 EPA score
                 COUNT(DISTINCT CASE
                     WHEN trainee_totals.total_trainees = trainee_totals.scored_trainees
                     THEN rp_att.report_id
                 END)                                               AS reports_with_epa,
-
-                -- Average EPA score across all trainee participants supervised
                 ROUND(AVG(es.epa_score), 2)                        AS avg_epa_score,
-
-                -- Raw count of individual EPA scores given
                 COUNT(es.id)                                       AS total_epa_scores_given
 
             FROM report_participants rp_att
@@ -103,7 +75,6 @@ export async function GET(req: NextRequest) {
                 ON u.user_id = rp_att.user_id
                 AND u.role = 'attending'
 
-            -- Only include reports that had at least one trainee participant
             JOIN (
                 SELECT
                     report_id,
@@ -121,12 +92,10 @@ export async function GET(req: NextRequest) {
             ) trainee_totals
                 ON trainee_totals.report_id = rp_att.report_id
 
-            -- Join trainee participants on the same reports
             JOIN report_participants rp_trainee
                 ON rp_trainee.report_id = rp_att.report_id
                 AND rp_trainee.role = 'trainee'
 
-            -- Left join EPA scores so we still count reports with no scores
             LEFT JOIN epa_scores es
                 ON es.report_participant_id = rp_trainee.id
 
@@ -134,7 +103,6 @@ export async function GET(req: NextRequest) {
 
             GROUP BY u.user_id, u.first_name, u.last_name, u.preferred_name
             ORDER BY
-                -- Sort by provision rate ascending (worst offenders first)
                 (COUNT(DISTINCT CASE
                     WHEN trainee_totals.total_trainees = trainee_totals.scored_trainees
                     THEN rp_att.report_id
@@ -143,12 +111,7 @@ export async function GET(req: NextRequest) {
         `);
 
         // ── Query 2: Per-report detail for every attending ────────────────────
-        //
-        // Returns one row per (attending, report, trainee) combination so the
-        // frontend can drill down into exactly which reports are missing EPAs.
-        // epa_score will be NULL when no score was given for that trainee.
-
-        const [detailRows] = await connection.execute(`
+        const [detailRows] = await pool.execute(`
             SELECT
                 r.ReportID                  AS report_id,
                 r.CreateDate                AS create_date,
@@ -160,8 +123,6 @@ export async function GET(req: NextRequest) {
                 u_trainee.preferred_name    AS trainee_preferred_name,
                 u_trainee.pgy               AS trainee_pgy,
                 u_trainee.pgy_note          AS trainee_pgy_note,
-                -- Aggregate: if multiple EPA scores exist pick the latest one,
-                -- NULL means no EPA was recorded for this trainee on this report
                 MAX(es.epa_score)           AS epa_score
 
             FROM report_participants rp_att
@@ -196,15 +157,13 @@ export async function GET(req: NextRequest) {
             ORDER BY rp_att.user_id, r.CreateDate DESC
         `);
 
-        const [missingRows] = await connection.execute(`
+        const [missingRows] = await pool.execute(`
             SELECT COUNT(DISTINCT rp.report_id) AS total_missing_epa
             FROM report_participants rp
             LEFT JOIN epa_scores es ON es.report_participant_id = rp.id
             WHERE rp.role = 'trainee'
             AND es.id IS NULL
         `);
-
-        await connection.end();
 
         // ── Post-process ──────────────────────────────────────────────────────
 
@@ -223,7 +182,7 @@ export async function GET(req: NextRequest) {
                 reports_with_trainees: withTrainees,
                 reports_with_epa: withEpa,
                 reports_missing_epa: withTrainees - withEpa,
-                provision_rate_pct: provisionRate,           // null if no trainee reports
+                provision_rate_pct: provisionRate,
                 avg_epa_score: row.avg_epa_score
                     ? parseFloat(String(row.avg_epa_score))
                     : null,
@@ -231,7 +190,6 @@ export async function GET(req: NextRequest) {
             };
         });
 
-        // Group detail rows by attending_user_id for easy frontend lookup
         const detailsByAttending: Record<number, {
             report_id: string;
             create_date: string | null;
@@ -271,14 +229,15 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            summary,               // array of per-attending provision stats
-            details: detailsByAttending, // keyed by attending_user_id
+            summary,
+            details: detailsByAttending,
             total_missing_epa: totalMissingEpa,
         });
 
     } catch (err) {
+        console.error('Admin EPA provision API error:', err);
         return NextResponse.json(
-            { success: false, message: 'Server error', error: (err as Error).message },
+            { success: false, message: 'Server error' },
             { status: 500 }
         );
     }

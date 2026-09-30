@@ -80,7 +80,7 @@ export default function KeyPerformanceMetrics({
         });
         return [
             { key: 'all', label: 'All procedures' },
-            ...Array.from(map.keys()).map(k => ({ key: k, label: k })),
+            ...Array.from(map.keys()).map(k => ({ key: k, label: k.length > 40 ? k.slice(0, 39).trim() + '...' : k })),
         ];
     }, [procedures]);
 
@@ -160,6 +160,7 @@ export default function KeyPerformanceMetrics({
 
     return (
         <div
+            className="kpm-card"
             style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -185,13 +186,18 @@ export default function KeyPerformanceMetrics({
                 <div style={{ fontWeight: 600, marginBottom: 8, color: 'rgba(55,65,81,0.95)' }}>
                     Procedure Metrics Overview
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <div style={{ fontSize: 13, color: 'rgba(55,65,81,0.9)', fontWeight: 600 }}>Filter</div>
-                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, color: 'rgba(55,65,81,0.9)', fontWeight: 600, flexShrink: 0 }}>Filter</div>
+                    <div style={{ position: 'relative', flex: '1 1 0', minWidth: 0, maxWidth: 260, marginLeft: 'auto' }}>
                         <select
                             value={recentFilter}
                             onChange={e => setRecentFilter(e.target.value)}
                             style={{
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
                                 padding: '6px 34px 6px 10px',
                                 borderRadius: 8,
                                 border: '1px solid rgba(0,0,0,0.12)',
@@ -217,11 +223,13 @@ export default function KeyPerformanceMetrics({
             </div>
 
             {/* Scrollable recent-cases table */}
-            <div style={{
+            <div 
+                className="kpm-scroll"
+                style={{
                 flex: '1 1 0',
                 minHeight: 0,
                 overflowY: 'auto',
-                overflowX: 'hidden',
+                overflowX: 'auto',
                 border: '1px solid #eef2ff',
                 borderRadius: 6,
                 marginBottom: 16,
@@ -250,7 +258,7 @@ export default function KeyPerformanceMetrics({
                             const dose = extractNumber(c as any, ['fluoroscopy_dose_value', 'radiation_dose', 'dose', 'dlp']);
                             return (
                                 <tr key={(c as any).report_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <td style={{ padding: 8, color: 'rgba(55,65,81,0.85)' }}>{displayDate}</td>
+                                    <td style={{ padding: 8, whiteSpace: 'nowrap', color: 'rgba(55,65,81,0.85)' }}>{displayDate}</td>
                                     <td title={c.proc_desc || c.proc_code || 'Unknown'} style={{ padding: 8, color: 'rgba(55,65,81,0.85)' }}>{c.proc_desc || c.proc_code || 'Unknown'}</td>
                                     <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{fluoroMin !== undefined ? `${fluoroMin.toFixed(1)} min` : '—'}</td>
                                     <td style={{ padding: 8, textAlign: 'right', color: 'rgba(55,65,81,0.85)' }}>{dose !== undefined ? dose.toFixed(1) : '—'}</td>
@@ -308,7 +316,9 @@ export default function KeyPerformanceMetrics({
             </div>
 
             {/* Scrollable averages table */}
-            <div style={{
+            <div 
+                className="kpm-scroll"
+                style={{
                 flex: '1 1 0',
                 minHeight: 0,
                 overflowY: 'auto',

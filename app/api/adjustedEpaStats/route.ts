@@ -65,7 +65,7 @@ interface ProcedureMedianRow {
 
 export async function GET(req: NextRequest) {
     try {
-        const me = await requireUser(['attending']);
+        const me = await requireUser(['trainee', 'attending', 'admin']);
 
         const connection = await getConnection();
 

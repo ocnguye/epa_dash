@@ -99,6 +99,46 @@ const truncateText = (txt?: string | null, n = 40) => {
     return s.length > n ? s.slice(0, n - 1).trim() + '…' : s;
 };
 
+/* Reusable labeled dropdown used by the chart filters */
+function FilterSelect({ id, label, value, onChange, children }: {
+    id: string;
+    label: string;
+    value: string;
+    onChange: (v: string) => void;
+    children: React.ReactNode;
+}) {
+    return (
+        <div className="tr-filter-item" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label htmlFor={id} style={{ fontSize: 13, color: '#000', fontWeight: 600 }}>{label}</label>
+            <div className="tr-select-wrap" style={{ position: 'relative', display: 'inline-block' }}>
+                <select
+                    id={id}
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    style={{
+                        padding: '6px 34px 6px 10px',
+                        borderRadius: 8,
+                        border: '1px solid rgba(0, 0, 0, 0.3)',
+                        background: 'rgba(175,213,240,0.06)',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        color: 'rgba(0, 0, 0, 0.6)',
+                        fontSize: 13,
+                        WebkitAppearance: 'none',
+                        MozAppearance: 'none',
+                        appearance: 'none',
+                    }}
+                >
+                    {children}
+                </select>
+                <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                    <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+            </div>
+        </div>
+    );
+}
+
 /* Dashboard Component */
 export default function Dashboard() {
     const router = useRouter();
@@ -114,7 +154,7 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [activeTab, setActiveTab] = useState('EPA Trend');
-        const [timeframe, setTimeframe] = useState<'last_month' | 'last_6_months' | 'last_year' | 'all'>('all');
+    const [timeframe, setTimeframe] = useState<'last_month' | 'last_6_months' | 'last_year' | 'all'>('all');
     // procedure filter for EPA Trend
     const [selectedProcedure, setSelectedProcedure] = useState<string>('all');
     // PROCEDURE COUNTS view timeframe (monthly / annual)
@@ -132,6 +172,13 @@ export default function Dashboard() {
     const [evaluatorStats, setEvaluatorStats] = useState<Record<number, { mean: number; stdDev: number }>>({});
     const [procedureMedians, setProcedureMedians] = useState<Record<string, { complexity: 1|2|3|4|5|null; fluoroTimeMedian: number|null; radiationDoseMedian: number|null }>>({});
     const [adjustedStatsLoading, setAdjustedStatsLoading] = useState(true);
+    // Peer-cohort average gets its own state (instead of living inside `stats`) so a dashboard refresh
+    // can't clobber the procedure-scoped value, and the chart doesn't rebuild on unrelated stats changes.
+    const [cohortAvgEpa, setCohortAvgEpa] = useState<number>(0);
+    const cohortCacheRef = useRef<Record<string, number>>({});  // 'all' + per-procedure cohort averages
+    const cohortReqIdRef = useRef(0);                           // drops out-of-order responses
+    const selectedProcedureRef = useRef('all');
+    selectedProcedureRef.current = selectedProcedure;
 
     useEffect(() => {
         const el = chartContainerRef.current;
@@ -195,6 +242,11 @@ export default function Dashboard() {
         const min = 34; // allow compact tabs when many are present
         return { baseTabWidth: baseAdjusted > min ? baseAdjusted : min, lastTabWidth: last > min ? last : min, containerWidthForTabs: chartInnerWidth };
     })();
+
+    // Compact layout flag derived from the measured chart width (no extra listeners needed).
+    // Must stay above epaOptions / renderChart, which read it.
+    const isMobile = chartInnerWidth > 0 && chartInnerWidth < 560;
+
     // Profile modal state
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ username: '', password: '', confirm_password: '', preferred_name: '', first_name: '', last_name: '', role: '', pgy: '' });
@@ -216,6 +268,15 @@ export default function Dashboard() {
             // evaluatorStats is now returned by the dashboard API alongside procedures
             // so we don't need a separate fetch — set it here directly.
             if (data.evaluatorStats) setEvaluatorStats(data.evaluatorStats);
+            // The overall cohort average arrives in this same response, so no second /api/dashboard call is needed.
+            const overall = Number((data.stats as any)?.cohort_avg_epa);
+            cohortCacheRef.current = Number.isFinite(overall) ? { all: overall } : {};
+            if (selectedProcedureRef.current === 'all') {
+                cohortReqIdRef.current++;
+                setCohortAvgEpa(Number.isFinite(overall) ? overall : 0);
+            } else {
+                loadCohortAvg(selectedProcedureRef.current); // a procedure filter is active: refresh its value
+            }
         } catch (err: any) {
             setError(err.message || 'Error loading dashboard');
         }
@@ -239,18 +300,22 @@ export default function Dashboard() {
         }
     };
 
-    // Fetch cohort average EPA for the selected procedure (or overall when proc not provided).
-    // This keeps the peer cohort line in the chart in sync with the procedure filter.
-    const fetchCohortAvg = async (proc?: string) => {
+    // Fetch the peer-cohort average for one procedure. The overall ('all') value is already delivered by
+    // fetchDashboard, so the network is only hit for a procedure that hasn't been looked up yet; results are
+    // cached until the dashboard is refreshed.
+    const loadCohortAvg = async (proc: string) => {
+        const cached = cohortCacheRef.current[proc];
+        if (cached !== undefined) { setCohortAvgEpa(cached); return; }
+        const reqId = ++cohortReqIdRef.current;
         try {
-            const url = proc && proc !== 'all' ? `/api/dashboard?proc=${encodeURIComponent(proc)}` : '/api/dashboard';
-            const res = await fetch(url);
+            const res = await fetch(`/api/dashboard?proc=${encodeURIComponent(proc)}`);
             if (!res.ok) return;
             const data = await res.json();
-            // Only update the cohort average field so we don't clobber trainee-specific stats
-            if (data && data.stats && typeof (data.stats as any).cohort_avg_epa !== 'undefined') {
-                setStats(prev => ({ ...prev, cohort_avg_epa: Number((data.stats as any).cohort_avg_epa) || 0 } as any));
-            }
+            const raw = (data?.stats as any)?.cohort_avg_epa;
+            if (typeof raw === 'undefined') return;
+            const v = Number(raw) || 0;
+            cohortCacheRef.current[proc] = v;
+            if (reqId === cohortReqIdRef.current) setCohortAvgEpa(v); // ignore if the filter changed meanwhile
         } catch (e) {
             // non-fatal; keep existing cohort avg
             // eslint-disable-next-line no-console
@@ -329,7 +394,7 @@ export default function Dashboard() {
         }
 
         setProfileLoading(true);
-            try {
+        try {
             const payload: any = {};
             if (profileForm.username && profileForm.username !== (user as any)?.username) payload.username = profileForm.username;
             if (profileForm.password) payload.password = profileForm.password;
@@ -377,8 +442,15 @@ export default function Dashboard() {
     // When the selected procedure filter changes, request a procedure-scoped cohort average
     // so the peer cohort line reflects the filter.
     useEffect(() => {
-        // Only update cohort average (server will return overall when proc omitted)
-        fetchCohortAvg(selectedProcedure);
+        if (selectedProcedure === 'all') {
+            // Overall value is seeded by fetchDashboard. On first mount the cache is still empty, so this is a
+            // no-op and fetchDashboard sets the value when it resolves (this used to be the duplicate request).
+            cohortReqIdRef.current++; // drop any in-flight procedure-scoped response
+            const overall = cohortCacheRef.current.all;
+            if (overall !== undefined) setCohortAvgEpa(overall);
+            return;
+        }
+        loadCohortAvg(selectedProcedure);
     }, [selectedProcedure]);
 
     const feedbackRate = stats.total_procedures ? (stats.feedback_requested / stats.total_procedures) * 100 : 0;
@@ -457,7 +529,7 @@ export default function Dashboard() {
                 const k = fmtDay(new Date(parseDate(p.create_date)));
                 if (!map[k]) { map[k] = { sum: 0, count: 0 }; orderedKeys.push(k); }
                 const v = Number(p.oepa);
-                if (Number.isFinite(v) && v > 0) {  // ← add v > 0 guard
+                if (Number.isFinite(v) && v > 0) {
                     map[k].sum += v;
                     map[k].count += 1;
                 }
@@ -512,7 +584,7 @@ export default function Dashboard() {
                     const k = monthKey(date);
                     if (!map[k]) map[k] = { sum: 0, count: 0 };
                     const v = Number(p.oepa);
-                    if (Number.isFinite(v) && v > 0) {  // ← add v > 0 guard
+                    if (Number.isFinite(v) && v > 0) {
                         map[k].sum += v;
                         map[k].count += 1;
                     }
@@ -528,7 +600,7 @@ export default function Dashboard() {
             }
         }
 
-        const cohortAvg = (typeof (stats as any)?.cohort_avg_epa === 'number') ? (stats as any).cohort_avg_epa : 0;
+        const cohortAvg = cohortAvgEpa;
 
         const epaDatasets: any[] = [];
         epaDatasets.push({
@@ -587,7 +659,7 @@ export default function Dashboard() {
                 {
                 label: 'Procedures',
                 data: filteredProcedures
-                    .filter(proc => proc.oepa != null && Number(proc.oepa) > 0)  // ← add filter
+                    .filter(proc => proc.oepa != null && Number(proc.oepa) > 0)
                     .map(proc => ({ x: proc.complexity, y: proc.oepa })),
                 backgroundColor: '#afd5f0',
                 borderColor: '#fff',
@@ -622,7 +694,7 @@ export default function Dashboard() {
         };
 
         const sortedEntries = Object.values(procTypeStats)
-            .filter(stat => stat.count > 0)  // ← exclude procedures with no valid EPA scores
+            .filter(stat => stat.count > 0) // exclude procedures with no valid EPA scores
             .sort((a, b) => procSortAsc ? a.total - b.total : b.total - a.total);
         const labels = sortedEntries.map(stat => trimProcedureName(stat.desc || 'Unknown'));
         const descriptions = sortedEntries.map(stat => stat.desc || '');
@@ -632,7 +704,8 @@ export default function Dashboard() {
             datasets: [
                 {
                     label: 'Average EPA Score',
-                    data: sortedEntries.map(stat => Number(stat.total.toFixed(2))),                    // attach descriptions and counts for tooltip callbacks
+                    data: sortedEntries.map(stat => Number(stat.total.toFixed(2))),
+                    // attach descriptions and counts for tooltip callbacks
                     descriptions,
                     counts,
                     backgroundColor: [
@@ -654,15 +727,12 @@ export default function Dashboard() {
             ]
         };
 
-        console.log('STATS OBJECT:', stats);
-        console.log('TOTAL_REPORTS:', stats.total_reports);
-
         return {
             epaTrend: epaTrendData,
             complexityVsEpa: complexityVsEpaData,
             procedureSpecific: procedureSpecificData
         };
-    }, [displayProcedures, filteredProcedures, timeframe, stats, user, procSortAsc]);
+    }, [displayProcedures, filteredProcedures, timeframe, cohortAvgEpa, user, procSortAsc]);
 
     // procedure counts (monthly or annual) computed from all procedures and filtered by selectedProcedure
     const procedureCounts = useMemo(() => {
@@ -720,14 +790,6 @@ export default function Dashboard() {
 
     const adjustedEpaByReportId = useMemo(() => {
         const map: Record<number, ReturnType<typeof computeAdjustedEPA> | null> = {};
-        // ── TEMP DEBUG: top-level state check ──
-        console.log('=== adjustedEpaByReportId recompute ===');
-        console.log('procedures count:', procedures.length);
-        console.log('evaluatorStats keys:', Object.keys(evaluatorStats));
-        console.log('evaluatorStats sample:', Object.entries(evaluatorStats).slice(0, 3));
-        console.log('procedureMedians keys (first 5):', Object.keys(procedureMedians).slice(0, 5));
-        console.log('raw evaluatorStats object:', evaluatorStats);
-        // ── END DEBUG ──
 
         for (const proc of procedures) {
             const procKey = proc.proc_code?.trim().toLowerCase() ?? '';
@@ -766,13 +828,14 @@ export default function Dashboard() {
         return map;
     }, [procedures, evaluatorStats, procedureMedians]);
 
-    // dynamic EPA chart options adjusted based on selected timeframe
+    // dynamic EPA chart options adjusted based on selected timeframe and screen size
     const epaOptions = useMemo(() => {
         const base: any = JSON.parse(JSON.stringify(epaTrendOptions));
         let maxTicksLimit = 12;
         if (timeframe === 'last_month') maxTicksLimit = 10;
         else if (timeframe === 'last_6_months') maxTicksLimit = 8;
         else if (timeframe === 'last_year') maxTicksLimit = 6;
+        if (isMobile) maxTicksLimit = Math.min(maxTicksLimit, 5);
 
         base.scales = base.scales || {};
         base.scales.x = {
@@ -781,8 +844,9 @@ export default function Dashboard() {
                 ...(base.scales.x?.ticks || {}),
                 autoSkip: true,
                 maxTicksLimit,
-                maxRotation: 45,
+                maxRotation: isMobile ? 0 : 45,
                 minRotation: 0,
+                ...(isMobile ? { font: { size: 10 } } : {}),
             }
         };
         base.scales.y = {
@@ -803,8 +867,17 @@ export default function Dashboard() {
             hoverSlopeLine: {},
         };
 
+        // compact legend on phones
+        if (isMobile) {
+            const legend = (epaTrendOptions as any).plugins?.legend ?? {};
+            base.plugins.legend = {
+                ...legend,
+                labels: { ...(legend.labels ?? {}), boxWidth: 12, font: { size: 11 } },
+            };
+        }
+
         return base as any;
-    }, [timeframe]);
+    }, [timeframe, isMobile]);
 
 
     const renderChart = () => {
@@ -835,6 +908,7 @@ export default function Dashboard() {
                     justifyContent: 'center',
                     color: '#6b7280',
                     fontSize: 16,
+                    textAlign: 'center',
                 }}>
                     No data to display for the selected timeframe
                 </div>
@@ -853,6 +927,8 @@ export default function Dashboard() {
                     justifyContent: 'center',
                     color: '#9ca3af',
                     gap: 8,
+                    textAlign: 'center',
+                    padding: '0 8px',
                 }}>
                     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                     <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 4-6" strokeDasharray="4 2"/>
@@ -874,31 +950,42 @@ export default function Dashboard() {
             /* Complexity vs EPA tab hidden for now - component retained for future use */
             case 'Procedure-Specific EPA': {
                 const barCount = chartData.procedureSpecific.labels?.length ?? 0;
-                const chartWidth = Math.max(barCount * 90, 600);
                 const containerWidth = chartInnerWidth || 600;
+                const chartWidth = isMobile
+                    ? Math.max(barCount * 72, containerWidth)
+                    : Math.max(barCount * 90, 600);
+                const chartHeight = isMobile ? 320 : 400;
                 return (
-                    <div style={{ 
-                        width: containerWidth, 
-                        maxWidth: containerWidth,
-                        overflowX: 'auto', 
-                        overflowY: 'hidden' 
-                    }}>
-                        <div style={{ position: 'relative', width: chartWidth, height: 400 }}>
-                            <Bar
-                                data={chartData.procedureSpecific}
-                                options={procedureSpecificOptions}
-                            />
+                    <>
+                        <div style={{ 
+                            width: containerWidth, 
+                            maxWidth: containerWidth,
+                            overflowX: 'auto', 
+                            overflowY: 'hidden',
+                            WebkitOverflowScrolling: 'touch',
+                        }}>
+                            <div style={{ position: 'relative', width: chartWidth, height: chartHeight }}>
+                                <Bar
+                                    data={chartData.procedureSpecific}
+                                    options={procedureSpecificOptions}
+                                />
+                            </div>
                         </div>
-                    </div>
+                        {isMobile && chartWidth > containerWidth && (
+                            <div style={{ textAlign: 'center', fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+                                Swipe sideways to see more →
+                            </div>
+                        )}
+                    </>
                 );
             }
-            case 'Procedure Counts':
+            case 'Procedure Counts': {
                 const firstDataIndex = procedureCounts.counts.findIndex(count => (count || 0) > 0);
                 const visibleLabels = firstDataIndex === -1 ? procedureCounts.labels : procedureCounts.labels.slice(firstDataIndex);
                 const visibleCounts = firstDataIndex === -1 ? procedureCounts.counts : procedureCounts.counts.slice(firstDataIndex);
 
                 return (
-                    <div style={{ background: '#fff', padding: 16, borderRadius: 8 }}>
+                    <div style={{ background: '#fff', padding: isMobile ? 0 : 16, borderRadius: 8 }}>
                         <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid rgba(175,213,240,0.2)', borderRadius: 6, background: 'rgba(175,213,240,0.02)' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', color: '#0f172a' }}>
                                 <thead style={{ background: 'rgba(175,213,240,0.08)', color: '#0f172a' }}>
@@ -923,15 +1010,25 @@ export default function Dashboard() {
                         </div>
                     </div>
                 );
+            }
             default:
                 return null;
         }
     };
 
+    // Short tab labels and taller tap targets on compact layouts
+    const tabLabels: Record<string, string> = {
+        'EPA Trend': 'EPA Trend',
+        'Procedure-Specific EPA': 'By Procedure',
+        'Procedure Counts': 'Counts',
+    };
+    const tabHeight = isMobile ? 44 : 40;
+
     return (
         <div
+            className="tr-page"
             style={{
-            minHeight: '100vh',
+                minHeight: '100vh',
                 width: '100%',
                 background: 'linear-gradient(135deg, #c8ceee 40%, #a7abde 100%)',
                 fontFamily: 'Ubuntu, sans-serif',
@@ -939,12 +1036,52 @@ export default function Dashboard() {
                 boxSizing: 'border-box',
             }}
         >
+            <style jsx global>{`
+                @media (max-width: 768px) {
+                    .tr-page { padding: 12px !important; }
+
+                    .tr-header { flex-direction: column !important; align-items: stretch !important; gap: 14px !important; padding: 18px !important; }
+                    .tr-title { font-size: 24px !important; }
+                    .tr-header-actions { width: 100% !important; flex-wrap: wrap !important; }
+                    .tr-toggle-wrap { flex: 1 1 100% !important; }
+                    .tr-header-btn { flex: 1 1 0 !important; justify-content: center !important; min-height: 44px !important; }
+
+                    .tr-main-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 14px !important; }
+                    .tr-left, .tr-right { min-width: 0 !important; }
+
+                    .tr-widgets { grid-template-columns: 1fr 1fr !important; gap: 12px !important; margin-bottom: 0 !important; }
+                    .tr-widget { padding: 16px !important; }
+                    .tr-widget-primary { grid-column: 1 / -1; }
+                    .tr-widget-num { font-size: 36px !important; }
+
+                    .tr-card { padding: 16px !important; }
+
+                    .tr-chart-head { flex-direction: column !important; align-items: stretch !important; gap: 12px !important; }
+                    .tr-filters { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; width: 100% !important; }
+                    .tr-filter-item { width: 100% !important; justify-content: space-between !important; }
+                    .tr-filter-item label { min-width: 78px; }
+                    .tr-select-wrap { flex: 1 1 auto !important; }
+                    .tr-select-wrap select { width: 100% !important; box-sizing: border-box !important; min-height: 40px !important; font-size: 16px !important; } /* 16px stops iOS zoom */
+                    .tr-sort-btn { width: 100% !important; justify-content: center !important; min-height: 40px !important; }
+
+                    .tr-log-scroll { max-height: 420px !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+
+                    .tr-modal { width: 92vw !important; padding: 16px !important; max-height: 90dvh !important; overflow-y: auto !important; }
+                    .tr-modal-grid { grid-template-columns: 1fr !important; }
+                    .tr-modal input { font-size: 16px !important; box-sizing: border-box !important; min-height: 40px !important; }
+                    .tr-modal-actions button { min-height: 44px !important; }
+
+                    .kpm-card { flex: none !important; }
+                    .kpm-scroll { flex: none !important; max-height: 280px !important; }
+                }
+            `}</style>
+
             <div style={{
                 maxWidth: '100%',
                 margin: '0 auto',
             }}>
                 {/* Header */}
-                <div style={{
+                <div className="tr-header" style={{
                     background: '#fff',
                     borderRadius: 16,
                     padding: 24,
@@ -955,7 +1092,7 @@ export default function Dashboard() {
                     alignItems: 'flex-start',
                 }}>
                     <div>
-                        <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8, color: '#000', margin: '0 0 8px 0' }}>
+                        <h1 className="tr-title" style={{ fontSize: 32, fontWeight: 700, marginBottom: 8, color: '#000', margin: '0 0 8px 0' }}>
                             EPA Progress Dashboard
                         </h1>
                         <div style={{ color: '#666', fontSize: 16 }}>
@@ -967,7 +1104,8 @@ export default function Dashboard() {
                                     <span>{` ${((user as any)?.preferred_name && String((user as any).preferred_name).trim()) ? String((user as any).preferred_name).trim() : user.first_name} ${user.last_name}`}</span>
                                     <span>{' | '}</span>
                                     <strong>PGY:</strong>
-                                    <span>{` ${formatPGYValue((user as any)?.pgy, (user as any)?.pgy_note)}`}</span>                                    <span>{' | '}</span>
+                                    <span>{` ${formatPGYValue((user as any)?.pgy, (user as any)?.pgy_note)}`}</span>
+                                    <span>{' | '}</span>
                                     <strong>Specialty:</strong>
                                     <span>{` ${user.specialty ?? 'Interventional Radiology'}`}</span>
                                 </>
@@ -977,12 +1115,13 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <div className="tr-header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <div className="tr-toggle-wrap" style={{ display: 'flex', alignItems: 'center' }}>
                             <DashboardToggle />
                         </div>
 
                         <button
+                            className="tr-header-btn"
                             onClick={openProfileModal}
                             style={{
                                 background: '#fff',
@@ -1018,6 +1157,7 @@ export default function Dashboard() {
 
                         {/* Logout Button */}
                         <button
+                            className="tr-header-btn"
                             onClick={() => router.push('/')}
                             style={{
                                 background: 'linear-gradient(135deg, #ff6b6b, #ee5a52)',
@@ -1066,29 +1206,29 @@ export default function Dashboard() {
 
                 
                 {/* Main Content: Two Column Layout */}
-                <div style={{
+                <div className="tr-main-grid" style={{
                     display: 'grid',
                     gridTemplateColumns: '2fr 1fr',
                     gap: 20,
                 }}>                    
                     {/* Left Column: Charts and Tables with Layered Tabs */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                    <div className="tr-left" style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
                         {/* Overview Widgets */}
-                        <div style={{
+                        <div className="tr-widgets" style={{
                             display: 'grid',
                             gridTemplateColumns: '1fr 1fr 1fr',
                             gap: 20,
                             marginBottom: 20,
                         }}>
                             {/* EPA Score Widget */}
-                            <div style={{
+                            <div className="tr-widget tr-widget-primary" style={{
                                 background: '#fff',
                                 borderRadius: 12,
                                 padding: 24,
                                 textAlign: 'center',
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                             }}>
-                                <div style={{ fontSize: 48, color: '#afd5f0', fontWeight: 700, marginBottom: 8 }}>
+                                <div className="tr-widget-num" style={{ fontSize: 48, color: '#afd5f0', fontWeight: 700, marginBottom: 8 }}>
                                     {loading
                                         ? '...'
                                         : typeof stats.avg_epa === 'number' && stats.avg_epa > 0
@@ -1101,14 +1241,14 @@ export default function Dashboard() {
                             </div>
 
                             {/* Procedures This Month Widget */}
-                            <div style={{
+                            <div className="tr-widget" style={{
                                 background: '#fff',
                                 borderRadius: 12,
                                 padding: 24,
                                 textAlign: 'center',
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                             }}>
-                                <div style={{ fontSize: 48, color: '#b2d3c2', fontWeight: 700, marginBottom: 8 }}>
+                                <div className="tr-widget-num" style={{ fontSize: 48, color: '#b2d3c2', fontWeight: 700, marginBottom: 8 }}>
                                     {loading ? '...' : stats.procedures}
                                 </div>
                                 <div style={{ fontSize: 12, color: '#000', fontWeight: 600, textTransform: 'uppercase' }}>
@@ -1117,14 +1257,14 @@ export default function Dashboard() {
                             </div>
 
                             {/* Pending Feedback Widget */}
-                            <div style={{
+                            <div className="tr-widget" style={{
                                 background: '#fff',
                                 borderRadius: 12,
                                 padding: 24,
                                 textAlign: 'center',
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                             }}>
-                                <div style={{ fontSize: 48, color: 'rgba(255, 126, 112, 0.7)', fontWeight: 700, marginBottom: 8 }}>
+                                <div className="tr-widget-num" style={{ fontSize: 48, color: 'rgba(255, 126, 112, 0.7)', fontWeight: 700, marginBottom: 8 }}>
                                     {loading ? '...' : stats.feedback_requested}
                                 </div>
                                 <div style={{ fontSize: 12, color: '#000', fontWeight: 600, textTransform: 'uppercase' }}>
@@ -1138,88 +1278,49 @@ export default function Dashboard() {
                             position: 'relative',
                         }}>
                             {/* Chart Container */}
-                            <div ref={chartContainerRef} style={{
+                            <div ref={chartContainerRef} className="tr-card" style={{
                                 background: '#fff',
                                 borderRadius: 12,
                                 padding: 24,
                                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                                 position: 'relative',
                                 zIndex: 5,
-                                marginTop: 32,
+                                marginTop: isMobile ? 36 : 32,
                             }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                <div className="tr-chart-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                                     <div style={{ fontWeight: 700, fontSize: 18, color: '#000' }}>{activeTab}</div>
-                                    {/* Timeframe filter for EPA Trend chart */}
-                                    {activeTab === 'EPA Trend' && (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <label htmlFor="procedure-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Procedure</label>
-                                                <div style={{ position: 'relative', display: 'inline-block' }}>
-                                                    <select
-                                                        id="procedure-select"
-                                                        value={selectedProcedure}
-                                                        onChange={(e) => setSelectedProcedure(e.target.value)}
-                                                        style={{
-                                                            padding: '6px 34px 6px 10px',
-                                                            borderRadius: 8,
-                                                            border: '1px solid rgba(0, 0, 0, 0.3)',
-                                                            background: 'rgba(175,213,240,0.06)',
-                                                            fontWeight: 600,
-                                                            cursor: 'pointer',
-                                                            color: 'rgba(0, 0, 0, 0.6)',
-                                                            fontSize: 13,
-                                                            WebkitAppearance: 'none',
-                                                            MozAppearance: 'none',
-                                                            appearance: 'none'
-                                                        }}
-                                                    >
-                                                        <option value="all">All procedures</option>
-                                                        {procedureOptions.map(opt => (
-                                                            <option key={opt.key} value={opt.key}>{opt.label}</option>
-                                                        ))}
-                                                    </select>
-                                                    <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                    </svg>
-                                                </div>
-                                            </div>
 
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <label htmlFor="timeframe-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Timeframe</label>
-                                                <div style={{ position: 'relative', display: 'inline-block' }}>
-                                                    <select
-                                                        id="timeframe-select"
-                                                        value={timeframe}
-                                                        onChange={(e) => setTimeframe(e.target.value as 'last_month' | 'last_6_months' | 'last_year' | 'all')}
-                                                        style={{
-                                                            padding: '6px 34px 6px 10px',
-                                                            borderRadius: 8,
-                                                            border: '1px solid rgba(0, 0, 0, 0.3)',
-                                                            background: 'rgba(175,213,240,0.06)',
-                                                            fontWeight: 600,
-                                                            cursor: 'pointer',
-                                                            color: 'rgba(0, 0, 0, 0.6)',
-                                                            fontSize: 13,
-                                                            WebkitAppearance: 'none',
-                                                            MozAppearance: 'none',
-                                                            appearance: 'none'
-                                                        }}
-                                                    >
-                                                        <option value="last_month">Last month</option>
-                                                        <option value="last_6_months">Last 6 months</option>
-                                                        <option value="last_year">Last year</option>
-                                                        <option value="all">All</option>
-                                                    </select>
-                                                    <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                    </svg>
-                                                </div>
-                                            </div>
+                                    {/* Procedure + timeframe filters for EPA Trend chart */}
+                                    {activeTab === 'EPA Trend' && (
+                                        <div className="tr-filters" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            <FilterSelect
+                                                id="procedure-select"
+                                                label="Procedure"
+                                                value={selectedProcedure}
+                                                onChange={setSelectedProcedure}
+                                            >
+                                                <option value="all">All procedures</option>
+                                                {procedureOptions.map(opt => (
+                                                    <option key={opt.key} value={opt.key}>{opt.label}</option>
+                                                ))}
+                                            </FilterSelect>
+                                            <FilterSelect
+                                                id="timeframe-select"
+                                                label="Timeframe"
+                                                value={timeframe}
+                                                onChange={(v) => setTimeframe(v as 'last_month' | 'last_6_months' | 'last_year' | 'all')}
+                                            >
+                                                <option value="last_month">Last month</option>
+                                                <option value="last_6_months">Last 6 months</option>
+                                                <option value="last_year">Last year</option>
+                                                <option value="all">All</option>
+                                            </FilterSelect>
                                         </div>
                                     )}
 
                                     {activeTab === 'Procedure-Specific EPA' && (
                                         <button
+                                            className="tr-sort-btn"
                                             onClick={() => setProcSortAsc(prev => !prev)}
                                             style={{
                                                 display: 'flex',
@@ -1254,68 +1355,27 @@ export default function Dashboard() {
                                     )}
 
                                     {activeTab === 'Procedure Counts' && (
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <label htmlFor="proc-counts-procedure-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Procedure</label>
-                                                <div style={{ position: 'relative', display: 'inline-block' }}>
-                                                    <select
-                                                        id="proc-counts-procedure-select"
-                                                        value={countsSelectedProcedure}
-                                                        onChange={(e) => setCountsSelectedProcedure(e.target.value)}
-                                                        style={{
-                                                            padding: '6px 34px 6px 10px',
-                                                            borderRadius: 8,
-                                                            border: '1px solid rgba(0, 0, 0, 0.3)',
-                                                            background: 'rgba(175,213,240,0.06)',
-                                                            fontWeight: 600,
-                                                            cursor: 'pointer',
-                                                            color: 'rgba(0, 0, 0, 0.6)',
-                                                            fontSize: 13,
-                                                            WebkitAppearance: 'none',
-                                                            MozAppearance: 'none',
-                                                            appearance: 'none'
-                                                        }}
-                                                    >
-                                                        <option value="all">All procedures</option>
-                                                        {procedureOptions.map(opt => (
-                                                            <option key={opt.key} value={opt.key}>{opt.label}</option>
-                                                        ))}
-                                                    </select>
-                                                    <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                    </svg>
-                                                </div>
-                                            </div>
-
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <label htmlFor="counts-timeframe-select" style={{ fontSize: 13, color: '#000000ff', fontWeight: 600 }}>Timeframe</label>
-                                                <div style={{ position: 'relative', display: 'inline-block' }}>
-                                                    <select
-                                                        id="counts-timeframe-select"
-                                                        value={countsGranularity}
-                                                        onChange={(e) => setCountsGranularity(e.target.value as 'monthly' | 'annual')}
-                                                        style={{
-                                                            padding: '6px 34px 6px 10px',
-                                                            borderRadius: 8,
-                                                            border: '1px solid rgba(0, 0, 0, 0.3)',
-                                                            background: 'rgba(175,213,240,0.06)',
-                                                            fontWeight: 600,
-                                                            cursor: 'pointer',
-                                                            color: 'rgba(0, 0, 0, 0.6)',
-                                                            fontSize: 13,
-                                                            WebkitAppearance: 'none',
-                                                            MozAppearance: 'none',
-                                                            appearance: 'none'
-                                                        }}
-                                                    >
-                                                        <option value="monthly">Monthly</option>
-                                                        <option value="annual">Annual</option>
-                                                    </select>
-                                                    <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: 'rgba(74,144,226,1)' }} xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                                                        <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                                    </svg>
-                                                </div>
-                                            </div>
+                                        <div className="tr-filters" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                            <FilterSelect
+                                                id="proc-counts-procedure-select"
+                                                label="Procedure"
+                                                value={countsSelectedProcedure}
+                                                onChange={setCountsSelectedProcedure}
+                                            >
+                                                <option value="all">All procedures</option>
+                                                {procedureOptions.map(opt => (
+                                                    <option key={opt.key} value={opt.key}>{opt.label}</option>
+                                                ))}
+                                            </FilterSelect>
+                                            <FilterSelect
+                                                id="counts-timeframe-select"
+                                                label="Timeframe"
+                                                value={countsGranularity}
+                                                onChange={(v) => setCountsGranularity(v as 'monthly' | 'annual')}
+                                            >
+                                                <option value="monthly">Monthly</option>
+                                                <option value="annual">Annual</option>
+                                            </FilterSelect>
                                         </div>
                                     )}
                                 </div>
@@ -1340,15 +1400,19 @@ export default function Dashboard() {
                                     <button
                                         key={tab}
                                         onClick={() => setActiveTab(tab)}
+                                        title={tab}
+                                        aria-label={tab}
+                                        aria-pressed={activeTab === tab}
                                         style={{
                                             background: activeTab === tab ? '#6b7280' : '#e5e7fa',
-                                            color: activeTab === tab ? '#ffffffff' : '#000000',
+                                            color: activeTab === tab ? '#ffffff' : '#000000',
                                             width: index === tabs.length - 1 ? lastTabWidth : baseTabWidth,
-                                            height: 40,
+                                            height: tabHeight,
+                                            padding: '0 4px',
                                             border: '1px solid rgba(107, 114, 128, 0.5)',
                                             borderRadius: '8px 8px 0 0', // Only top corners rounded
                                             fontWeight: 600,
-                                            fontSize: 14,
+                                            fontSize: isMobile ? 12 : 14,
                                             cursor: 'pointer',
                                             transition: 'all 0.2s ease',
                                             position: 'relative',
@@ -1363,17 +1427,18 @@ export default function Dashboard() {
                                             boxSizing: 'border-box',
                                             overflow: 'hidden',
                                             whiteSpace: 'nowrap',
-                                            textOverflow: 'ellipsis'
+                                            textOverflow: 'ellipsis',
+                                            touchAction: 'manipulation',
                                         }}
                                     >
-                                        {tab}
+                                        {isMobile ? (tabLabels[tab] ?? tab) : tab}
                                     </button>
                                 ))}
                             </div>
                         </div>
 
                         {/* Procedure Summary Table - Full Width */}
-                        <div style={{
+                        <div className="tr-card" style={{
                             background: '#fff',
                             borderRadius: 12,
                             padding: 24,
@@ -1382,9 +1447,10 @@ export default function Dashboard() {
                             <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 16, color: '#000' }}>
                                 Procedure Log
                             </div>
-                            <div style={{ 
+                            <div className="tr-log-scroll" style={{ 
                                 maxHeight: 500, 
                                 overflowY: 'auto',
+                                overflowX: 'auto',
                                 border: '1px solid #e9ecef',
                                 borderRadius: 6,
                                 fontSize: 13,
@@ -1400,7 +1466,7 @@ export default function Dashboard() {
                     </div>
 
                     {/* Right Column: Progress Circle and Recent Feedback */}
-                    <div style={{
+                    <div className="tr-right" style={{
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 20,
@@ -1422,10 +1488,11 @@ export default function Dashboard() {
                         {/* Seek Feedback Rate Trends component removed from trainee dashboard (component retained) */}
                     </div>
                 </div>
+
                 {/* Profile Edit Modal */}
                 {showProfileModal && (
                     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                        <div style={{ width: 520, background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,0.3)', maxWidth: '95%' }}>
+                        <div className="tr-modal" style={{ width: 520, background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,0.3)', maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                 <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#374151' }}>Edit Profile</h3>
                                 <button onClick={closeProfileModal} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer', color: '#888' }} title="Close">×</button>
@@ -1433,7 +1500,7 @@ export default function Dashboard() {
 
                             <form onSubmit={submitProfileUpdate}>
                                 <div style={{ display: 'grid', gap: 12 }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                    <div className="tr-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                                         <label style={{ fontSize: 13, color: '#333' }}>
                                             First name
                                             <input
@@ -1490,7 +1557,7 @@ export default function Dashboard() {
 
                                     {/* Role and PGY are only shown to attending users (this page is for trainees) */}
                                     {((user as any)?.role === 'attending') && (
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                        <div className="tr-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                                             <label style={{ fontSize: 13, color: '#333' }}>
                                                 Role
                                                 <input
@@ -1527,7 +1594,7 @@ export default function Dashboard() {
                                     {profileError && <div style={{ color: '#b91c1c', fontSize: 13 }}>{profileError}</div>}
                                     {profileSuccess && <div style={{ color: '#166534', fontSize: 13 }}>{profileSuccess}</div>}
 
-                                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
+                                    <div className="tr-modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
                                         <button type="button" onClick={closeProfileModal} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e6e6e6', background: '#fff', cursor: 'pointer' }}>Cancel</button>
                                         <button type="submit" disabled={profileLoading} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff', cursor: 'pointer' }}>{profileLoading ? 'Saving...' : 'Save'}</button>
                                     </div>

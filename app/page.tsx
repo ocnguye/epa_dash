@@ -7,11 +7,14 @@ const PASSWORD_LOGIN_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PASSWORD_LOGIN ===
 
 const inputStyle: React.CSSProperties = {
     width: '100%',
+    boxSizing: 'border-box',
     padding: 8,
     marginBottom: 15,
     border: '1px solid #ccc',
     borderRadius: 4,
     color: '#0000008b',
+    fontSize: 16, // 16px prevents iOS zoom-on-focus
+    minHeight: 40,
 };
 
 const labelStyle: React.CSSProperties = {
@@ -24,7 +27,9 @@ const labelStyle: React.CSSProperties = {
 
 const primaryButtonStyle: React.CSSProperties = {
     width: '100%',
+    boxSizing: 'border-box',
     padding: 10,
+    minHeight: 44,
     background: '#c8ceee',
     color: '#000',
     border: 'none',
@@ -87,14 +92,49 @@ export default function LoginPage() {
 
     return (
         <div
+            className="login-page"
             style={{
                 display: 'flex',
                 minHeight: '100vh',
                 fontFamily: 'Ubuntu',
             }}
         >
+            <style jsx>{`
+                @media (max-width: 900px) {
+                    .login-page {
+                        flex-direction: column !important;
+                        min-height: 100dvh !important;
+                        background: linear-gradient(135deg, #c8ceee 30%, #a7abde 100%) !important;
+                    }
+                    .login-left {
+                        width: 100% !important;
+                        flex: 1 1 auto !important;
+                        background: transparent !important;
+                        padding: 32px 16px !important;
+                        box-sizing: border-box !important;
+                    }
+                    .login-title {
+                        font-size: 28px !important;
+                        margin-bottom: 20px !important;
+                        letter-spacing: 0 !important;
+                    }
+                    .login-card {
+                        padding: 20px !important;
+                        box-sizing: border-box !important;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.12) !important;
+                    }
+                    .login-right { display: none !important; }
+                }
+                @media (max-width: 480px) {
+                    .login-left { padding: 24px 12px !important; }
+                    .login-title { font-size: 24px !important; }
+                    .login-card { padding: 16px !important; }
+                }
+            `}</style>
+
             {/* Left side: Login form */}
             <div
+                className="login-left"
                 style={{
                     width: '33.33%',
                     background: '#fff',
@@ -106,6 +146,7 @@ export default function LoginPage() {
                 }}
             >
                 <h1
+                    className="login-title"
                     style={{
                         fontSize: 42,
                         fontWeight: 700,
@@ -118,6 +159,7 @@ export default function LoginPage() {
                     Welcome to Your Resident Dashboard
                 </h1>
                 <div
+                    className="login-card"
                     style={{
                         width: '100%',
                         maxWidth: 400,
@@ -128,13 +170,16 @@ export default function LoginPage() {
                     }}
                 >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
-                        <label style={{ fontSize: 16, fontWeight: 600, color: '#000', marginBottom: 4 }}>Dashboard</label>
+                        <label htmlFor="dashboard-select" style={{ fontSize: 16, fontWeight: 600, color: '#000', marginBottom: 4 }}>Dashboard</label>
                         <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
                             <select
+                                id="dashboard-select"
                                 value={preferredDashboard}
                                 onChange={e => setPreferredDashboard(e.target.value as 'epadash' | 'rprdash')}
                                 style={{
                                     width: '100%',
+                                    boxSizing: 'border-box',
+                                    minHeight: 40,
                                     padding: '8px 34px 8px 10px',
                                     borderRadius: 4,
                                     border: '1px solid #ccc',
@@ -171,6 +216,9 @@ export default function LoginPage() {
                                 type="text"
                                 id="username"
                                 name="username"
+                                autoComplete="username"
+                                autoCapitalize="none"
+                                autoCorrect="off"
                                 required
                                 value={username}
                                 onChange={e => { setUsername(e.target.value); if (error) setError(''); }}
@@ -184,6 +232,7 @@ export default function LoginPage() {
                                 type="password"
                                 id="password"
                                 name="password"
+                                autoComplete="current-password"
                                 required
                                 value={password}
                                 onChange={e => { setPassword(e.target.value); if (error) setError(''); }}
@@ -203,8 +252,10 @@ export default function LoginPage() {
                     )}
                 </div>
             </div>
-            {/* Right side: Gradient and image */}
+
+            {/* Right side: Gradient and image (hidden on mobile) */}
             <div
+                className="login-right"
                 style={{
                     width: '66.67%',
                     background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 70%)',

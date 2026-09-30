@@ -50,7 +50,10 @@ export default function PostLogin() {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            minHeight: '100vh',
+            minHeight: '100dvh',
+            padding: 24,
+            boxSizing: 'border-box',
+            textAlign: 'center',
             fontFamily: 'Ubuntu',
             gap: 12,
         }}>

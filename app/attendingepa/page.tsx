@@ -34,19 +34,7 @@ export default function AttendingPage() {
     const [profileSuccess, setProfileSuccess] = useState('');
     const [filterPgy, setFilterPgy] = useState<string>('all');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');    const [sortBy, setSortBy] = useState<'avg_epa' | 'pgy'>('avg_epa');
-    const strengthsRef = useRef<HTMLDivElement>(null);
     const [strengthsHeight, setStrengthsHeight] = useState<number | undefined>(undefined);
-
-    useEffect(() => {
-        if (!strengthsRef.current) return;
-        const observer = new ResizeObserver(entries => {
-            for (const entry of entries) {
-                setStrengthsHeight(Math.round(entry.contentRect.height + 36));
-            }
-        });
-        observer.observe(strengthsRef.current);
-        return () => observer.disconnect();
-    }, []);
 
     useEffect(() => {
         const load = async () => {
@@ -152,7 +140,7 @@ export default function AttendingPage() {
     // Chart and table are rendered via encapsulated components below
 
     return (
-        <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 20, boxSizing: 'border-box' }}>
+        <div className="az-page" style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 20, boxSizing: 'border-box' }}>
             <style jsx>{`
                 @media (max-width: 768px) {
                     .az-page { padding: 12px !important; }
@@ -181,29 +169,32 @@ export default function AttendingPage() {
                     .az-modal { width: 92vw !important; padding: 16px !important; }
                     .az-modal-namegrid { grid-template-columns: 1fr !important; }
                     .az-modal input { font-size: 16px !important; } /* stops iOS zoom-on-focus */
+                    .az-modal input { box-sizing: border-box !important; }
+                    .az-modal { max-height: 90dvh !important; }
                 }
                 @media (max-width: 480px) {
                     .az-title { font-size: 20px !important; }
                     .az-header-actions { flex-direction: column !important; }
                 }
             `}</style>
-        <div style={{ maxWidth: 'calc(100vw - 40px)', margin: '0 auto' }}>
-            <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div className="az-inner" style={{ maxWidth: 'calc(100vw - 40px)', margin: '0 auto' }}>
+            <div className="az-header" style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                        <h1 style={{ fontSize: 32, fontWeight: 700, color: '#000', margin: '0 0 8px 0' }}>EPA Attending Dashboard</h1>
+                        <h1 className="az-title" style={{ fontSize: 32, fontWeight: 700, color: '#000', margin: '0 0 8px 0' }}>EPA Attending Dashboard</h1>
                         <div style={{ marginTop: 6 }}>
                             {currentUser ? (
-                                <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
+                                <div className="az-subtitle" style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
                                     <div style={{ color: '#666', fontSize: 16, fontWeight: 400 }}>{`Welcome to your hub for reviewing trainee progress, Dr. ${((currentUser as any)?.preferred_name && String((currentUser as any).preferred_name).trim()) ? String((currentUser as any).preferred_name).trim() : (currentUser.first_name ?? '')} ${currentUser.last_name ?? ''}!`}</div>
                                 </div>
                             ) : (
-                                <div style={{ color: '#666', fontSize: 16 }}>EPA Attending Dashboard — your hub for reviewing trainee progress and supporting development.</div>
+                                <div className="az-subtitle" style={{ color: '#666', fontSize: 16 }}>EPA Attending Dashboard — your hub for reviewing trainee progress and supporting development.</div>
                             )}
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <div className="az-header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                         <DashboardToggle epaPath="/attendingepa" rprPath="/attendingrpr" />
                         <button
+                            className="az-header-btn"
                             onClick={() => {
                                 // Prefill form with current user values like trainee dashboard
                                 setProfileError('');
@@ -252,6 +243,7 @@ export default function AttendingPage() {
                         </button>
 
                         <button
+                            className="az-header-btn"
                             onClick={() => router.push('/')}
                             style={{
                                 background: 'linear-gradient(135deg, #ff6b6b, #ee5a52)',
@@ -298,8 +290,8 @@ export default function AttendingPage() {
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 16, marginBottom: 18, alignItems: 'center' }}>
-                    <div style={{ background: '#fff', padding: 12, borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="az-filter-row" style={{ display: 'flex', gap: 16, marginBottom: 18, alignItems: 'center' }}>
+                    <div className="az-filter-card" style={{ background: '#fff', padding: 12, borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
                             <label style={{ marginRight: 6, color: '#374151', fontWeight: 600 }}>Filter PGY:</label>
                             {/* Build PGY options in either ascending or descending order */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -351,7 +343,7 @@ export default function AttendingPage() {
                             </div>
                         </div>
 
-                    <div style={{ background: '#fff', padding: 12, borderRadius: 12, boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div className="az-filter-card" style={{ background: '#fff', padding: 12, borderRadius: 12, boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)', display: 'flex', alignItems: 'center', gap: 12 }}>
                         <label style={{ marginRight: 6, color: '#374151', fontWeight: 600 }}>Sort by:</label>
                         <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e6e6e6', color: '#111827' }}>
                             <option value="avg_epa">Average EPA</option>
@@ -363,7 +355,7 @@ export default function AttendingPage() {
                 {/* Profile Edit Modal */}
                 {showProfileModal && (
                     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-                        <div style={{ width: 520, background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,0.3)', maxWidth: '95%' }}>
+                        <div className="az-modal" style={{ width: 520, background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 12px 40px rgba(0,0,0,0.3)', maxWidth: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                 <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#374151' }}>Edit Profile</h3>
                                 <button onClick={() => setShowProfileModal(false)} style={{ background: 'transparent', border: 'none', fontSize: 20, cursor: 'pointer', color: '#888' }} title="Close">×</button>
@@ -420,7 +412,7 @@ export default function AttendingPage() {
                                 }
                             }}>
                                 <div style={{ display: 'grid', gap: 12 }}>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                                    <div className="az-modal-namegrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                                         <label style={{ fontSize: 13, color: '#333' }}>
                                             First name
                                             <input
@@ -508,10 +500,10 @@ export default function AttendingPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     
                         {/* Chart + Strengths/Weaknesses side by side */}
-                        <div style={{ display: 'flex', alignItems: 'stretch', gap: 16, height: 620 }}>
+                        <div className="az-chart-row" style={{ display: 'flex', alignItems: 'stretch', gap: 16, height: 620 }}>
                         
                             {/* Cohort chart */}
-                            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                            <div className="az-chart-panel" style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                                 <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12, flexShrink: 0 }}>Cohort EPA Comparison</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                                     <AttendingCohortChart
@@ -523,7 +515,7 @@ export default function AttendingPage() {
                             </div>
 
                             {/* Strengths + Weaknesses stacked */}
-                            <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
+                            <div className="az-sw-col" style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
 
                                 {/* Tab-style title */}
                                 <div style={{
@@ -544,7 +536,7 @@ export default function AttendingPage() {
                                 </div>
 
                                 {/* Panel container */}
-                                <div style={{
+                                <div className="az-sw-panel" style={{
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: 12,
@@ -556,13 +548,13 @@ export default function AttendingPage() {
                                     flex: 1,
                                     overflow: 'hidden',
                                 }}>
-                                    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                                    <div className="az-sw-item" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
                                         <CohortStrengthsWeaknesses
                                             mode="strengths"
                                             pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
                                         />
                                     </div>
-                                    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                                    <div className="az-sw-item" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
                                         <CohortStrengthsWeaknesses
                                             mode="weaknesses"
                                             pgyFilter={filterPgy === 'all' ? null : Number(filterPgy)}
@@ -575,7 +567,7 @@ export default function AttendingPage() {
 
                         {/* Table */}
                         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                            <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0 }}>
+                            <div className="az-table-card" style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 6px 24px rgba(15,23,42,0.06)', flex: '1 1 0', minWidth: 0 }}>
                                 <div style={{ fontWeight: 700, color: '#374151', marginBottom: 12 }}>
                                     Trainees ({filtered.length})
                                 </div>

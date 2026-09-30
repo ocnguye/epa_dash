@@ -269,7 +269,7 @@ export default function TraineePage() {
   }, [procedures, procSortAsc]);
 
   return (
-      <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 24, boxSizing: 'border-box' }}>
+      <div className="az-page" style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)', fontFamily: 'Ubuntu, sans-serif', padding: 24, boxSizing: 'border-box' }}>
         <style jsx>{`
             @media (max-width: 768px) {
                 .az-page { padding: 12px !important; }
@@ -286,6 +286,7 @@ export default function TraineePage() {
                 .az-line-box { flex: none !important; height: 280px !important; }
                 .az-bar-head { flex-wrap: wrap !important; gap: 8px !important; }
                 .az-bar-canvas { height: 320px !important; }
+                .az-left-card { flex: none !important; }
             }
             @media (max-width: 480px) {
                 .az-title { font-size: 20px !important; }
@@ -293,14 +294,14 @@ export default function TraineePage() {
         `}</style>
           <div style={{ width: '100%', margin: 0 }}>
               {/* Header */}
-              <div style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div className="az-header" style={{ background: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                      <h1 style={{ fontSize: 32, fontWeight: 700, margin: '0 0 8px 0', color: '#000' }}>
+                      <h1 className="az-title" style={{ fontSize: 32, fontWeight: 700, margin: '0 0 8px 0', color: '#000' }}>
                           {user ? (
                               `Trainee Drill Down Page: ${((user as any)?.preferred_name && String((user as any).preferred_name).trim()) ? String((user as any).preferred_name).trim() + ' ' + (user.last_name || '') : `${user.first_name || ''} ${user.last_name || ''}`}`
                           ) : 'Trainee Drill Down Page'}
                       </h1>
-                      <div style={{ color: '#666', fontSize: 16 }}>
+                      <div className="az-subtitle" style={{ color: '#666', fontSize: 16 }}>
                           {user ? (
                               <>
                                   <strong>Trainee:</strong>
@@ -317,24 +318,24 @@ export default function TraineePage() {
                           )}
                       </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <button onClick={() => router.push('/attendingepa')} style={{ background: '#fff', color: '#374151', border: '1px solid rgba(55,65,81,0.08)', borderRadius: 8, padding: '10px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Back to Trainees</button>
+                  <div className="az-header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                      <button className="az-header-btn" onClick={() => router.push('/attendingepa')} style={{ background: '#fff', color: '#374151', border: '1px solid rgba(55,65,81,0.08)', borderRadius: 8, padding: '10px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Back to Trainees</button>
                   </div>
               </div>
 
               {/* Main Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, marginTop: 18, alignItems: 'stretch' }}>
+              <div className="az-trainee-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, marginTop: 18, alignItems: 'stretch' }}>
 
                   {/* Left Column */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
 
                       {/* Overall EPA Trajectory */}
-                      <div style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                      <div className="az-left-card" style={{ background: '#fff', borderRadius: 12, padding: 18, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                           <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 12, color: '#374151' }}>Overall EPA Trajectory</div>
                           {loading ? (
                               <div style={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>
                           ) : epaTrendData ? (
-                              <div style={{ flex: 1, minHeight: 120 }}>
+                              <div className="az-line-box" style={{ flex: 1, minHeight: 120 }}>
                                   <Line
                                       data={epaTrendData as any}
                                       options={{
@@ -363,6 +364,7 @@ export default function TraineePage() {
 
                       {/* Procedure-Specific EPA Progression */}
                       <div
+                          className="az-right-card"
                           ref={chartContainerRef}
                           style={{
                               background: '#fff',
@@ -377,7 +379,7 @@ export default function TraineePage() {
                               overflow: 'hidden',
                           }}
                       >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                          <div className="az-bar-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                               <div style={{ fontWeight: 700, fontSize: 16, color: '#374151' }}>Procedure-Specific EPA Progression</div>
                               <button
                                   onClick={() => setProcSortAsc(prev => !prev)}
@@ -427,7 +429,7 @@ export default function TraineePage() {
                                         flex: 1,
                                         minHeight: 0,
                                     }}>
-                                        <div style={{ position: 'relative', width: chartWidth, height: 420, minHeight: 300 }}>
+                                        <div className="az-bar-canvas" style={{ position: 'relative', width: chartWidth, height: 420, minHeight: 300 }}>
                                             <Bar data={procedureSpecificData as any} options={procedureSpecificOptions as any} />
                                         </div>
                                     </div>

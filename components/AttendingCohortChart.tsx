@@ -155,6 +155,16 @@ export default function AttendingCohortChart({
         return () => ro.disconnect();
     }, []);
 
+    const isMobile = viewWidth > 0 && viewWidth < 520;
+
+    const touchRef = useRef<{ x: number; startIdx: number } | null>(null);
+
+    const scrollToIdx = (idx: number) => {
+        const clamped = Math.max(0, Math.min(maxStart, idx));
+        setStart(clamped);
+        if (scrollRef.current) scrollRef.current.scrollLeft = clamped * MIN_PX_PER_TRAINEE;
+    };
+
     // reset scroll when the dataset changes (filter/sort)
     useEffect(() => {
         setStart(0);
@@ -179,6 +189,7 @@ export default function AttendingCohortChart({
                 position: 'top' as const,
                 labels: {
                     usePointStyle: true,
+                    boxWidth: isMobile ? 8 : 40,
                     generateLabels: (chart: any) => {
                         // Build one legend entry per PGY level present in the data
                         const pgySet = new Set<number>();
@@ -258,16 +269,25 @@ export default function AttendingCohortChart({
                 max: 5,
                 ticks: { stepSize: 1 },
                 grid: { color: 'rgba(0,0,0,0.06)' },
-                title: { display: true, text: 'Average EPA' }
+                title: { display: !isMobile, text: 'Average EPA' },
             },
             x: {
                 min: safeStart,
                 max: safeStart + visible - 1,
                 grid: { color: 'rgba(0,0,0,0.03)' },
-                ticks: { autoSkip: false, maxRotation: 45, minRotation: 45 },
+                ticks: {
+                    autoSkip: false,
+                    maxRotation: 45,
+                    minRotation: 45,
+                    font: { size: isMobile ? 10 : 12 },
+                    callback: function (this: any, value: any) {
+                        const label = this.getLabelForValue(value);
+                        return isMobile && label && label.length > 12 ? label.slice(0, 11) + '…' : label;
+                    },
+                },
             },
-        }
-    }), [cohortChart.datasets.length, pgyFilter, safeStart, visible]);
+        },
+    }), [cohortChart.datasets.length, pgyFilter, safeStart, visible, isMobile]);
 
     if (!cohortChart.labels || cohortChart.labels.length === 0) {
         return (
@@ -289,7 +309,21 @@ export default function AttendingCohortChart({
                         scrollRef.current.scrollLeft += e.deltaX;
                     }
                 }}
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: needsScroll ? SCROLLBAR_H : 0 }}
+                onTouchStart={(e) => {
+                    if (!needsScroll) return;
+                    touchRef.current = { x: e.touches[0].clientX, startIdx: safeStart };
+                }}
+                onTouchMove={(e) => {
+                    if (!needsScroll || !touchRef.current) return;
+                    const dx = e.touches[0].clientX - touchRef.current.x;
+                    scrollToIdx(touchRef.current.startIdx - Math.round(dx / MIN_PX_PER_TRAINEE));
+                }}
+                onTouchEnd={() => { touchRef.current = null; }}
+                style={{
+                    position: 'absolute', top: 0, left: 0, right: 0,
+                    bottom: needsScroll ? SCROLLBAR_H : 0,
+                    touchAction: 'pan-y',
+                }}
             >
                 <Bar data={cohortChart as any} options={cohortOptions as any} />
             </div>

@@ -32,7 +32,7 @@ export default function AttendingTraineeTable({
 
     const tableMaxHeight = maxHeight
         ? `${maxHeight - 48}px`
-        : 'calc(100vh - 240px)';
+        : 'min(70vh, calc(100vh - 240px))';
 
     const handleSort = (key: SortKey) => {
         if (sortKey === key) {
@@ -103,17 +103,28 @@ export default function AttendingTraineeTable({
             borderRadius: 6,
             fontSize: 13,
         }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800, color: '#0f172a' }}>
+            <style jsx>{`
+                @media (max-width: 768px) {
+                    .az-table { min-width: 0 !important; font-size: 12px; }
+                    .col-hide-sm { display: none !important; }
+                    .az-table th, .az-table td { padding: 8px 8px !important; }
+                    .az-view-btn { min-height: 34px !important; padding: 4px 14px !important; }
+                }
+            `}</style>
+            <table className="az-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800, color: '#0f172a' }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 1, boxShadow: '0 2px 6px rgba(0,0,0,0.06)' }}>
                     <tr>
-                        <th style={thStyle('name')} onClick={() => handleSort('name')}>
+                        <th
+                            style={{ ...thStyle('name'), position: 'sticky', left: 0, zIndex: 2, background: '#f8f9fa' }}
+                            onClick={() => handleSort('name')}
+                        >
                             <span style={{ display: 'flex', alignItems: 'center' }}>Name <SortIcon col="name" /></span>
                         </th>
-                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Role</th>
+                        <th className="col-hide-sm" style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Role</th>
                         <th style={thStyle('pgy')} onClick={() => handleSort('pgy')}>
                             <span style={{ display: 'flex', alignItems: 'center' }}>PGY <SortIcon col="pgy" /></span>
                         </th>
-                        <th style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Specialty</th>
+                        <th className="col-hide-sm" style={{ padding: '8px 12px', textAlign: 'left', color: '#495057', fontWeight: 600, borderBottom: '1px solid #dee2e6' }}>Specialty</th>
                         <th style={thStyle('avg_epa')} onClick={() => handleSort('avg_epa')}>
                             <span style={{ display: 'flex', alignItems: 'center' }}>Avg EPA <SortIcon col="avg_epa" /></span>
                         </th>
@@ -128,16 +139,16 @@ export default function AttendingTraineeTable({
                         const cohortAvg = t.pgy != null ? (pgyAvgMap[t.pgy] ?? 0) : 0;
                         return (
                             <tr key={t.user_id} style={{ borderBottom: '1px solid #f8f9fa' }}>
-                                <td style={{ padding: '8px 12px', color: '#000' }}>
+                                <td style={{ padding: '8px 12px', color: '#000', position: 'sticky', left: 0, background: '#fff' }}>
                                     <div style={{ fontWeight: 600 }}>
                                         {(t.preferred_name && String(t.preferred_name).trim())
                                             ? `${String(t.preferred_name).trim()} ${t.last_name ?? ''}`.trim()
                                             : `${t.first_name ?? ''} ${t.last_name ?? ''}`.trim()}
                                     </div>
                                 </td>
-                                <td style={{ padding: '8px 12px', color: '#000', textTransform: 'capitalize' }}>{t.role ?? ''}</td>
+                                <td className="col-hide-sm" style={{ padding: '8px 12px', color: '#000', textTransform: 'capitalize' }}>{t.role ?? ''}</td>
                                 <td style={{ padding: '8px 12px', color: '#000' }}>{t.pgy ?? ''}</td>
-                                <td style={{ padding: '8px 12px', color: '#000' }}>{t.specialty ?? 'Interventional Radiology'}</td>
+                                <td className="col-hide-sm" style={{ padding: '8px 12px', color: '#000' }}>{t.specialty ?? 'Interventional Radiology'}</td>
                                 <td style={{ padding: '8px 12px', color: '#000' }}>
                                     {typeof t.avg_epa === 'number'
                                         ? (t.avg_epa.toFixed ? t.avg_epa.toFixed(2) : t.avg_epa)
@@ -146,6 +157,7 @@ export default function AttendingTraineeTable({
                                 <td style={{ padding: '8px 12px', color: '#000' }}>{t.report_count ?? 0}</td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                     <button
+                                        className="az-view-btn"
                                         onClick={() => {
                                             const encoded = btoa(cohortAvg.toFixed(2));
                                             router.push(`/attendingepa/trainee/${t.user_id}?ca=${encoded}`);

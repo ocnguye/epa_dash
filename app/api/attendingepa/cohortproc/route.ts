@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import mysql from 'mysql2/promise';
 import { resolveProcedureAliasFromQuery, getProcTypesByIds } from '@/lib/procAliasLookup';
 import { requireUser } from '@/lib/requireUser';
+import { findClosestProcTypes } from '@/lib/procConceptLookup';
 
 const getConnection = async () => mysql.createConnection({
     host: process.env.AWS_RDS_HOST,
@@ -129,6 +130,15 @@ export async function GET(req: NextRequest) {
         ];
 
         const [rows] = await connection.execute(query, params) as any[];
+
+        if (q && !matchedViaAlias && rows.length === 0) {
+            const closest = await findClosestProcTypes(connection, q);
+            if (closest.length > 0) {
+                await connection.end();
+                return NextResponse.json({ success: true,
+                    disambiguation: { query: q, matchedAlias: null, closest: true, candidates: closest } });
+            }
+        }
         await connection.end();
 
         // Aggregate per procedure — same logic as the component's useMemo

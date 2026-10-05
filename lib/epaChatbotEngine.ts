@@ -74,6 +74,8 @@ export interface ProcedureTypeCandidate {
   proc_code: string;
   proc_desc: string;
   proc_cat: string | null;
+  reason?: string; 
+  trainee_cases?: number
 }
 
 // One row per (alias, proc_type) link — the shape returned by a join across
@@ -154,6 +156,7 @@ export interface DisambiguationResponse {
       proc_code: string;
       proc_cat: string | null;
     }[];
+    closest?: boolean; // true if the disambiguation is based on closest matches rather than alias resolution
   };
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mysql from 'mysql2/promise';
 import { resolveProcedureAliasFromQuery, getProcTypesByIds } from '@/lib/procAliasLookup';
+import { findClosestProcTypes } from '@/lib/procConceptLookup';
 import { requireUser } from '@/lib/requireUser';
 
 const getConnection = async () => mysql.createConnection({
@@ -213,6 +214,25 @@ export async function GET(req: NextRequest, context: any) {
             ORDER BY r.CreateDate DESC`,
             procedureParams
         );
+
+        if (q && !matchedViaAlias && (procedures as any[]).length === 0) {
+            const [hist] = await connection.execute(
+                `SELECT pt.id AS proc_type_id, COUNT(*) AS n
+                FROM report_participants rp
+                JOIN reports r ON r.ReportID = rp.report_id
+                JOIN proc_types pt ON UPPER(TRIM(r.ProcedureDescList)) = UPPER(TRIM(pt.proc_desc))
+                WHERE rp.user_id = ? AND rp.role = 'trainee'
+                GROUP BY pt.id`, [traineeId]) as [any[], any];
+            const counts = new Map<number, number>(hist.map(h => [Number(h.proc_type_id), Number(h.n)]));
+            const closest = await findClosestProcTypes(connection, q, { caseCounts: counts });
+            if (closest.length > 0) {
+                await connection.end();
+                return NextResponse.json({
+                    success: true,
+                    disambiguation: { query: q, matchedAlias: null, closest: true, candidates: closest },
+                });
+            }
+        }
 
         // Stats — unchanged, intentionally NOT filtered by q.
         // The chatbot's drilldown numbers (avg/trend) come from the filtered `procedures`

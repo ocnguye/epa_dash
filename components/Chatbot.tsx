@@ -83,6 +83,7 @@ type ChatMessage =
       originalQuery: string;
       trainee: TraineeListItem | null;
       pendingPgy: number | null;
+      closest?: boolean; // true = no exact match; candidates are the closest related procedures
     }
   | { id: string; role: 'bot'; kind: 'trainee-overview'; trainee: TraineeListItem; detail: TraineeDetail }
   | { id: string; role: 'bot'; kind: 'procedure-drilldown'; trainee: TraineeListItem; drilldown: ProcedureDrilldown; matchSource: MatchSource; cohortAvg: { avg: number | null; count: number; totalCount: number } | null; pgyUsed: number | null; groupSummary: ProcedureGroupSummary }
@@ -271,6 +272,7 @@ export default function Chatbot() {
         id: uid(), role: 'bot', kind: 'ambiguous-procedure',
         candidates: filtered.raw.disambiguation.candidates,
         matchedAlias: filtered.raw.disambiguation.matchedAlias,
+        closest: !!filtered.raw.disambiguation.closest,
         originalQuery: remainder,
         trainee,
         pendingPgy: explicitPgy,
@@ -324,6 +326,7 @@ export default function Chatbot() {
         id: uid(), role: 'bot', kind: 'ambiguous-procedure',
         candidates: result.raw.disambiguation.candidates,
         matchedAlias: result.raw.disambiguation.matchedAlias,
+        closest: !!result.raw.disambiguation.closest,
         originalQuery: remainder,
         trainee: null,
         pendingPgy: explicitPgy,
@@ -562,7 +565,9 @@ function ProcedureDisambiguationCard({
   return (
     <Card>
       <p className="text-xs font-medium text-slate-600">
-        {aliasLabel} matches multiple procedures{contextLabel}. Select all that apply:
+        {msg.closest
+          ? <>No exact match for "{msg.originalQuery}"{contextLabel}. Closest procedures — select all that apply:</>
+          : <>{aliasLabel} matches multiple procedures{contextLabel}. Select all that apply:</>}
       </p>
       <div className="space-y-1.5">
         {msg.candidates.map(c => {
@@ -588,6 +593,14 @@ function ProcedureDisambiguationCard({
                 <span className="block font-medium leading-tight">{c.proc_desc}</span>
                 {c.proc_code && <span className="text-slate-400">{c.proc_code}</span>}
                 {c.proc_cat && <span className="ml-1 text-slate-400">· {c.proc_cat}</span>}
+                {c.reason && (
+                  <span className="block text-slate-400">
+                    Related: {c.reason}
+                    {c.trainee_cases != null
+                      ? ` · ${c.trainee_cases === 0 ? 'none logged' : `${c.trainee_cases} case${c.trainee_cases === 1 ? '' : 's'} logged`}`
+                      : ''}
+                  </span>
+                )}
               </span>
             </button>
           );

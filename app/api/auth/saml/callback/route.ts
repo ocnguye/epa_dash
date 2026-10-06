@@ -3,6 +3,8 @@ import { getSaml } from '@/lib/saml';
 import { pool } from '@/lib/db';
 import { getSession } from '@/lib/session';
 import { startAuthSession } from '@/lib/authSession';
+import { logSamlProfile } from '@/lib/samlDebug';
+
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,6 +35,7 @@ export async function POST(req: NextRequest) {
     if (typeof samlResponse !== 'string') return go('/?error=sso_failed');
 
     const { profile } = await getSaml().validatePostResponseAsync({ SAMLResponse: samlResponse });
+    logSamlProfile(profile, samlResponse); // remove after debugging
     if (!profile) return go('/?error=sso_failed');
 
     const isPersistent = profile.nameIDFormat?.endsWith(':persistent');

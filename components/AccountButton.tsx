@@ -3,7 +3,14 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-export default function AccountButton({ account }: { account: any }) {
+type Props = {
+  userId: number;
+  title: string;
+  subtitle?: string;
+  destination?: string; // where to go after the profile is selected
+};
+
+export default function AccountButton({ userId, title, subtitle, destination = '/post-login' }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -15,7 +22,7 @@ export default function AccountButton({ account }: { account: any }) {
       const res = await fetch('/api/auth/select-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: account.user_id }),
+        body: JSON.stringify({ userId }),
       });
       if (!res.ok) {
         console.error('select-account failed', res.status, await res.text());
@@ -23,7 +30,7 @@ export default function AccountButton({ account }: { account: any }) {
         setBusy(false);
         return;
       }
-      router.replace('/post-login');
+      router.replace(destination);
     } catch {
       setErr('Network error. Please try again.');
       setBusy(false);
@@ -37,10 +44,8 @@ export default function AccountButton({ account }: { account: any }) {
         disabled={busy}
         className="w-full rounded-lg border p-4 text-left hover:bg-gray-50 disabled:opacity-60"
       >
-        <div className="font-medium capitalize">{account.role} Dashboard</div>
-        <div className="text-sm text-gray-500">
-          {account.preferred_name || `${account.first_name} ${account.last_name}`}
-        </div>
+        <div className="font-medium">{title}</div>
+        {subtitle && <div className="text-sm text-gray-500">{subtitle}</div>}
       </button>
       {err && <div className="text-sm text-red-700 mt-1">{err}</div>}
     </div>

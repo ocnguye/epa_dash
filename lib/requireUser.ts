@@ -19,14 +19,14 @@ export interface AuthedUser {
 export async function requireUser(allowed?: Role[]): Promise<AuthedUser> {
   const s = await getSession();
 
-    if (!s.identityId && process.env.ALLOW_PASSWORD_LOGIN === 'true' && s.username) {
-    const [rows] = await pool.execute(
-        `SELECT user_id, username, role FROM users WHERE username = ?`, [s.username]);
-    const u: any = (rows as any[])[0];
-    if (!u?.role) throw new AuthError(401);
-    if (allowed && !allowed.includes(u.role)) throw new AuthError(403);
-    return { userId: u.user_id, username: u.username, role: u.role,
-            identityId: 0, authSessionId: '' };
+      if (!s.identityId && process.env.ALLOW_PASSWORD_LOGIN === 'true' && s.userId) {
+      const [rows] = await pool.execute(
+        `SELECT user_id, username, role FROM users WHERE user_id = ?`, [s.userId]);
+      const u: any = (rows as any[])[0];
+      if (!u?.role) throw new AuthError(401);
+      if (allowed && !allowed.includes(u.role)) throw new AuthError(403);
+      return { userId: u.user_id, username: u.username, role: u.role,
+              identityId: 0, authSessionId: '' };
     }
     
   if (!s.userId || !s.identityId || !s.authSessionId) throw new AuthError(401);

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { getSession } from '@/lib/session';
-
+import { requireUser, AuthError } from '@/lib/requireUser';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AttendingProvisionRow {
@@ -33,26 +32,7 @@ interface ReportDetailRow {
 
 export async function GET(req: NextRequest) {
     try {
-        const session = await getSession();
-        const username = session.username;
-        if (!username) {
-            return NextResponse.json({ success: false, message: 'Not authenticated' }, { status: 401 });
-        }
-
-        // Auth check — admin only. Read role fresh from the DB rather than
-        // trusting session.role, since this route grants access to every
-        // trainee's data — worth the one extra query for an admin-only page.
-        const [authRows] = await pool.execute(
-            'SELECT role FROM users WHERE username = ?',
-            [username]
-        );
-        const auth = Array.isArray(authRows) && authRows[0] ? (authRows as any)[0] : null;
-        if (!auth) {
-            return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
-        }
-        if (String(auth.role) !== 'admin') {
-            return NextResponse.json({ success: false, message: 'Forbidden' }, { status: 403 });
-        }
+        await requireUser(['admin']);
 
         // ── Query 1: Per-attending provision summary ──────────────────────────
         const [summaryRows] = await pool.execute(`
@@ -234,11 +214,11 @@ export async function GET(req: NextRequest) {
             total_missing_epa: totalMissingEpa,
         });
 
-    } catch (err) {
+        } catch (err) {
+        if (err instanceof AuthError) {
+            return NextResponse.json({ success: false, message: err.message }, { status: err.status });
+        }
         console.error('Admin EPA provision API error:', err);
-        return NextResponse.json(
-            { success: false, message: 'Server error' },
-            { status: 500 }
-        );
+        return NextResponse.json({ success: false, message: 'Server error' }, { status: 500 });
     }
 }

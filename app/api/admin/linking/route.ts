@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { pool } from '@/lib/db';
-import { AuthError } from '@/lib/requireUser';
-import { requireAdminIdentity } from '@/lib/requireAdminIdentity';
+import { requireUser, AuthError } from '@/lib/requireUser';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,7 +22,7 @@ function handleError(err: any, label: string) {
 // Identities with no active link, and users with no active link
 export async function GET() {
   try {
-    await requireAdminIdentity();
+        await requireUser(['admin']);
 
     const [identities] = await pool.execute(
       `SELECT s.sso_identity_id, s.email, s.display_name, s.netid, s.first_login_at, s.last_login_at
@@ -54,7 +53,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const admin = await requireAdminIdentity();
+    const admin = await requireUser(['admin']);
     const body = await req.json().catch(() => ({}));
 
     const identityId = Number(body?.identityId);
@@ -100,7 +99,7 @@ export async function POST(req: NextRequest) {
           [String(ident.email).toLowerCase(), userId]);
       }
 
-      console.log(`ADMIN LINK: by identity ${admin.identityId}, identity ${identityId} -> user ${userId} (${u.role})`);
+      console.log(`ADMIN LINK: by user ${admin.userId}, identity ${identityId} -> user ${userId} (${u.role})`);
       return NextResponse.json({ success: true, message: 'Profile linked' });
     }
 
@@ -140,7 +139,7 @@ export async function POST(req: NextRequest) {
         conn.release();
       }
 
-      console.log(`ADMIN CREATE: by identity ${admin.identityId}, identity ${identityId} -> new user ${newId} (${role})`);
+      console.log(`ADMIN CREATE: by user ${admin.userId}, identity ${identityId} -> new user ${newId} (${role})`);
       return NextResponse.json({ success: true, message: 'Profile created and linked' });
     }
 

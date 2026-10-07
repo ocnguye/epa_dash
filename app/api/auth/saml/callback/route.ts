@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
 
     // 3. first-login auto-match (only when nothing is linked yet)
     const [everLinked] = await pool.execute(
-        `SELECT 1 FROM user_sso_links WHERE sso_identity_id = ? LIMIT 1`, [identityId]);
+      `SELECT 1 FROM user_sso_links WHERE sso_identity_id = ? LIMIT 1`, [identityId]);
     if (links.length === 0 && (everLinked as any[]).length === 0) {
       let method: 'netid_match' | 'email_match' = 'netid_match';
       let cands = uid ? await findUnclaimed('username', uid) : [];
@@ -88,12 +88,19 @@ export async function POST(req: NextRequest) {
         cands = await findUnclaimed('email', email);
         method = 'email_match';
       }
-      if (cands.length === 1) {
-        await pool.execute(
-          `INSERT INTO user_sso_links (sso_identity_id, user_id, link_method) VALUES (?, ?, ?)`,
-          [identityId, cands[0].user_id, method],
-        );
-        links.push(cands[0]);
+      // One person can have several role rows, so link them all
+      // as long as they all share the same username.
+      const sameUser =
+        cands.length > 0 &&
+        new Set(cands.map((c) => String(c.username).toLowerCase())).size === 1;
+      if (sameUser) {
+        for (const c of cands) {
+          await pool.execute(
+            `INSERT INTO user_sso_links (sso_identity_id, user_id, link_method) VALUES (?, ?, ?)`,
+            [identityId, c.user_id, method],
+          );
+          links.push(c);
+        }
       }
     }
 

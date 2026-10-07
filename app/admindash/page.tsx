@@ -260,7 +260,7 @@ export default function AdminDash() {
                             </svg>
                             Edit Profile
                         </button>
-                        <button className="az-header-btn" onClick={() => router.push('/')}
+                        <button className="az-header-btn" onClick={async () => { try { await fetch('/api/logout', { method: 'POST' }); } finally { router.push('/'); } }}
                             style={{ ...headerBtnBase, background: 'linear-gradient(135deg, #ff6b6b, #ee5a52)', color: '#fff', border: '1px solid rgba(55,65,81,0.08)' }}
                             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 8px rgba(238,90,82,0.4)'; }}
                             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 1px 2px rgba(0,0,0,0.04)'; }}

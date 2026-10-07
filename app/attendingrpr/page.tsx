@@ -204,7 +204,7 @@ export default function AttendingRprPage() {
               Edit Profile
             </button>
             <button
-              onClick={() => router.push('/')}
+              onClick={async () => { try { await fetch('/api/logout', { method: 'POST' }); } finally { router.push('/'); } }}
               style={{
                 background: 'linear-gradient(135deg, #ff6b6b, #ee5a52)',
                 color: '#fff',

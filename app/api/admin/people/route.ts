@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     const profiles = existing as any[];
     if (profiles.length === 0) return fail('Person not found', 404);
 
-    // ── Add a role (new profile, or re-enable a disabled one) ────────────
+        // ── Add a role (connect an existing profile, re-enable, or create) ───
     if (body.action === 'add_role') {
       const role = String(body?.role ?? '');
       if (!ROLES.includes(role)) return fail('Invalid role', 400);
@@ -91,10 +91,63 @@ export async function POST(req: NextRequest) {
 
       const [idRows] = await pool.execute(
         `SELECT email FROM sso_identities WHERE sso_identity_id = ?`, [identityId]);
-      const email = (idRows as any[])[0]?.email;
+      const email = (idRows as any[])[0]?.email
+        ? String((idRows as any[])[0].email).toLowerCase()
+        : null;
       const base = profiles[0]; // same person: reuse name and username
-      const unusable = await bcrypt.hash(randomUUID(), 10);
 
+      const UNLINKED = `NOT EXISTS (
+        SELECT 1 FROM user_sso_links l WHERE l.user_id = u.user_id AND l.disabled_at IS NULL)`;
+
+      // 1) The admin picked an existing profile: connect it
+      const pickedId = Number(body?.userId);
+      if (Number.isInteger(pickedId)) {
+        const [chk] = await pool.execute(
+          `SELECT u.user_id FROM users u WHERE u.user_id = ? AND u.role = ? AND ${UNLINKED}`,
+          [pickedId, role],
+        );
+        if ((chk as any[]).length === 0) return fail('That profile is not available to connect', 409);
+
+        const [upd] = await pool.execute(
+          `UPDATE user_sso_links SET disabled_at = NULL
+           WHERE sso_identity_id = ? AND user_id = ? AND disabled_at IS NOT NULL`,
+          [identityId, pickedId],
+        );
+        if (!(upd as any).affectedRows) {
+          await pool.execute(
+            `INSERT INTO user_sso_links (sso_identity_id, user_id, link_method) VALUES (?, ?, 'manual')`,
+            [identityId, pickedId],
+          );
+        }
+        if (email) {
+          await pool.execute(`UPDATE users SET email = ? WHERE user_id = ? AND email IS NULL`, [email, pickedId]);
+        }
+        console.log(`ADMIN LINK_EXISTING: by user ${me.userId}, identity ${identityId} -> user ${pickedId} (${role})`);
+        return NextResponse.json({ success: true, message: `existing ${role} profile connected` });
+      }
+
+      // 2) Look for existing unlinked profiles of that role that could be this person
+      if (body.create_new !== true) {
+        const [candRows] = await pool.execute(
+          `SELECT u.user_id, u.first_name, u.last_name, u.username, u.email
+           FROM users u
+           WHERE u.role = ? AND ${UNLINKED}
+             AND (u.username = ?
+                  OR (u.first_name = ? AND u.last_name = ?)
+                  OR (u.email IS NOT NULL AND LOWER(u.email) = ?))`,
+          [role, base.username, base.first_name, base.last_name, email ?? ''],
+        );
+        const candidates = candRows as any[];
+        if (candidates.length > 0) {
+          return NextResponse.json(
+            { success: false, needs_choice: true, candidates, message: 'Existing profiles found' },
+            { status: 409 },
+          );
+        }
+      }
+
+      // 3) Nothing to connect (or the admin chose to create): create a new profile
+      const unusable = await bcrypt.hash(randomUUID(), 10);
       const conn = await pool.getConnection();
       let newId: number;
       try {
@@ -102,8 +155,7 @@ export async function POST(req: NextRequest) {
         const [ins] = await conn.execute(
           `INSERT INTO users (first_name, last_name, username, password, role, email)
            VALUES (?, ?, ?, ?, ?, ?)`,
-          [base.first_name, base.last_name, base.username, unusable, role,
-           email ? String(email).toLowerCase() : null],
+          [base.first_name, base.last_name, base.username, unusable, role, email],
         );
         newId = (ins as any).insertId;
         await conn.execute(
@@ -121,7 +173,7 @@ export async function POST(req: NextRequest) {
       console.log(`ADMIN ADD_ROLE: by user ${me.userId}, identity ${identityId} -> new user ${newId} (${role})`);
       return NextResponse.json({ success: true, message: `${role} access added` });
     }
-
+    
     // ── Disable / enable one profile's access ────────────────────────────
     if (body.action === 'disable' || body.action === 'enable') {
       const userId = Number(body?.userId);

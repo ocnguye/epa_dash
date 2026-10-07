@@ -20,6 +20,11 @@ export default function ManageAccessPanel() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [newRole, setNewRole] = useState<Record<number, string>>({});
+  
+  const [choice, setChoice] = useState<{
+    identityId: number; role: string; who: string;
+    candidates: { user_id: number; first_name: string | null; last_name: string | null; username: string; email: string | null }[];
+  } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -51,10 +56,21 @@ export default function ManageAccessPanel() {
         body: JSON.stringify(body),
       });
       const d = await res.json().catch(() => ({}));
-      setMsg(res.ok
-        ? { ok: true, text: `Done: ${d.message}. Changes take effect immediately.` }
-        : { ok: false, text: d.message || `Something went wrong (error ${res.status}).` });
-      if (res.ok) await load();
+      if (d.needs_choice) {
+        const p = people.find(x => x.sso_identity_id === body.identityId);
+        setChoice({
+          identityId: body.identityId,
+          role: body.role,
+          who: p?.display_name || p?.email || 'this person',
+          candidates: d.candidates ?? [],
+        });
+      } else {
+        setChoice(null);
+        setMsg(res.ok
+          ? { ok: true, text: `Done: ${d.message}. Changes take effect immediately.` }
+          : { ok: false, text: d.message || `Something went wrong (error ${res.status}).` });
+        if (res.ok) await load();
+      }
     } catch {
       setMsg({ ok: false, text: 'Network error. Please try again.' });
     } finally {
@@ -86,6 +102,39 @@ export default function ManageAccessPanel() {
           {msg.text}
         </div>
       )}
+
+        {choice && (
+            <div style={{ ...card, border: `1px solid ${BORDERS.blue}` }}>
+            <h2 style={{ fontWeight: 700, color: '#374151', fontSize: 15, margin: 0, textTransform: 'capitalize' }}>
+                Existing {choice.role} profiles found for {choice.who}
+            </h2>
+            <p style={{ fontSize: 13, color: '#4b5563', margin: '4px 0 12px 0' }}>
+                These profiles are not connected to anyone and look like they could be the same person.
+                Connect the right one to keep their history, or create a new profile if none of them is them.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                {choice.candidates.map(c => (
+                <div key={c.user_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '9px 12px', border: '1px solid #e5e7eb', borderRadius: 8 }}>
+                    <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{`${c.first_name ?? ''} ${c.last_name ?? ''}`.trim()}</div>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>{c.username}{c.email ? ` · ${c.email}` : ''}</div>
+                    </div>
+                    <button disabled={busy} style={primaryBtn}
+                    onClick={() => act({ action: 'add_role', identityId: choice.identityId, role: choice.role, userId: c.user_id })}>
+                    Connect this one
+                    </button>
+                </div>
+                ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+                <button disabled={busy} style={smallBtn}
+                onClick={() => act({ action: 'add_role', identityId: choice.identityId, role: choice.role, create_new: true })}>
+                None of these, create a new profile
+                </button>
+                <button disabled={busy} style={smallBtn} onClick={() => setChoice(null)}>Cancel</button>
+            </div>
+            </div>
+        )}
 
       <div style={card}>
         <h2 style={{ fontWeight: 700, color: '#374151', fontSize: 15, margin: 0 }}>People with access ({visible.length})</h2>

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { requireUser, AuthError } from '@/lib/requireUser';
-import AdminLinkingPanel from '@/components/AdminLinkingPanel';
+import AccountLinkingTabs from '@/components/AccountLinkingTabs';
 
 export default async function AccountLinkingPage() {
   try {
@@ -58,8 +58,8 @@ export default async function AccountLinkingPage() {
           </details>
         </div>
 
-        {/* The tool */}
-        <AdminLinkingPanel />
+        {/* AdminLinking Panel + ManageAccessPanel */}
+        <AccountLinkingTabs />
       </div>
     </main>
   );

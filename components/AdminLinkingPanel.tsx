@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type Ident = {
@@ -20,13 +20,49 @@ type UserRow = {
   email: string | null;
 };
 
+const COLORS = { blue: 'rgba(175, 213, 240, 0.6)', green: 'rgba(178, 211, 194, 0.6)', red: 'rgba(255, 126, 112, 0.6)' };
+const BORDERS = { blue: '#afd5f0', green: '#b2d3c2', red: '#ff7e70' };
+
 const norm = (s?: string | null) => (s ?? '').trim().toLowerCase();
 const fullName = (u: UserRow) => `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim();
 
 const ROLE_HELP: Record<string, string> = {
-  trainee: 'Can see their own EPA scores and reports.',
-  attending: 'Can see the trainees and reports they work with.',
-  admin: 'Can see program-wide data and use this tool. Grant with care.',
+  trainee: 'Sees their own EPA scores and reports.',
+  attending: 'Sees their trainees and reports.',
+  admin: 'Sees program-wide data and can use this tool. Grant with care.',
+};
+
+const card: React.CSSProperties = {
+  background: '#fff',
+  borderRadius: 12,
+  padding: 18,
+  boxShadow: '0 6px 24px rgba(15,23,42,0.06)',
+  boxSizing: 'border-box',
+};
+const sectionTitle: React.CSSProperties = { fontWeight: 700, color: '#374151', fontSize: 15, margin: 0 };
+const hint: React.CSSProperties = { fontSize: 13, color: '#4b5563', margin: '4px 0 12px 0' };
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '8px 10px',
+  borderRadius: 6,
+  border: '1px solid #d1d5db',
+  fontSize: 14,
+  color: '#111827',
+  background: '#fff',
+  fontFamily: 'inherit',
+};
+const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#374151', display: 'block' };
+const primaryBtn: React.CSSProperties = {
+  padding: '8px 14px',
+  borderRadius: 8,
+  border: 'none',
+  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+  color: '#fff',
+  fontSize: 14,
+  fontWeight: 600,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
 };
 
 export default function AdminLinkingPanel() {
@@ -35,6 +71,7 @@ export default function AdminLinkingPanel() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState<Ident | null>(null);
+  const [tab, setTab] = useState<'connect' | 'create'>('connect');
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -59,6 +96,7 @@ export default function AdminLinkingPanel() {
     setSelected(i);
     setMsg(null);
     setFilter('');
+    setTab('connect');
     const parts = (i.display_name ?? '').trim().split(/\s+/).filter(Boolean);
     setForm({
       role: 'trainee',
@@ -115,7 +153,7 @@ export default function AdminLinkingPanel() {
     if (u.role === 'admin' && !window.confirm(`Give ${who} ADMIN access by connecting them to ${label}?`)) return;
     post(
       { action: 'link', identityId: selected.sso_identity_id, userId: u.user_id },
-      `${who} is now connected to ${label}. They will see it the next time they sign in.`,
+      `${who} is now connected to ${label}. They’ll see it the next time they sign in.`,
     );
   }
 
@@ -125,64 +163,84 @@ export default function AdminLinkingPanel() {
     if (form.role === 'admin' && !window.confirm(`Create an ADMIN profile for ${who}?`)) return;
     post(
       { action: 'create', identityId: selected.sso_identity_id, ...form },
-      `A ${form.role} profile was created for ${who}. They will see it the next time they sign in.`,
+      `A ${form.role} profile was created for ${who}. They’ll see it the next time they sign in.`,
     );
   }
 
-  const input = 'w-full rounded-md border border-gray-400 bg-white px-3 py-2 text-base text-gray-900 placeholder-gray-500';
-  const label = 'mb-1 block text-sm font-semibold text-gray-900';
+  const tabBtn = (t: 'connect' | 'create', text: string) => (
+    <button
+      onClick={() => setTab(t)}
+      style={{
+        fontSize: 13,
+        padding: '5px 14px',
+        borderRadius: 6,
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        border: `1px solid ${tab === t ? BORDERS.blue : '#e5e7eb'}`,
+        background: tab === t ? COLORS.blue : '#fff',
+        color: '#374151',
+        fontWeight: tab === t ? 700 : 400,
+      }}
+    >
+      {text}
+    </button>
+  );
 
   return (
-    <div className="text-gray-900">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {msg && (
         <div
           role="status"
-          className={`mb-4 rounded-lg border p-3 text-base font-medium ${
-            msg.ok
-              ? 'border-green-400 bg-green-50 text-green-900'
-              : 'border-red-400 bg-red-50 text-red-900'
-          }`}
+          style={{
+            borderRadius: 10,
+            padding: '10px 14px',
+            fontSize: 14,
+            fontWeight: 600,
+            background: msg.ok ? COLORS.green : COLORS.red,
+            border: `1px solid ${msg.ok ? BORDERS.green : BORDERS.red}`,
+            color: msg.ok ? '#1a5c30' : '#a02010',
+          }}
         >
           {msg.text}
         </div>
       )}
 
-      <div className="grid gap-8 md:grid-cols-2">
-        {/* LEFT: who is waiting */}
-        <section>
-          <h2 className="text-xl font-semibold text-gray-900">
-            Awaiting profile setup ({identities.length})
-          </h2>
-          <p className="mt-1 mb-3 text-base text-gray-800">
-            The following Emory users have signed in to the dashboard but do not have a user
-            profile yet, so they cannot see anything. Select a person to continue.
-          </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
+        {/* LEFT: awaiting */}
+        <div style={card}>
+          <h2 style={sectionTitle}>Awaiting profile setup ({identities.length})</h2>
+          <p style={hint}>Emory users who have signed in but have no profile yet.</p>
 
           {!loaded ? (
-            <div className="text-base text-gray-700">Loading…</div>
+            <div style={{ fontSize: 14, color: '#4b5563' }}>Loading…</div>
           ) : identities.length === 0 ? (
-            <div className="rounded-lg border border-gray-300 bg-gray-50 p-4 text-base text-gray-800">
-              No one is waiting. Everyone who has signed in with Emory is connected to at least
-              one profile.
+            <div style={{ padding: '24px 0', textAlign: 'center', color: '#6b7280', fontSize: 14 }}>
+              No one is waiting. Everyone who has signed in is connected to a profile.
             </div>
           ) : (
-            <div className="space-y-2">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 520, overflowY: 'auto' }}>
               {identities.map(i => {
                 const active = selected?.sso_identity_id === i.sso_identity_id;
                 return (
                   <button
                     key={i.sso_identity_id}
                     onClick={() => pick(i)}
-                    className={`w-full rounded-lg border p-3 text-left hover:bg-blue-50 ${
-                      active ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-300' : 'border-gray-300 bg-white'
-                    }`}
+                    style={{
+                      textAlign: 'left',
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      background: active ? COLORS.blue : '#fff',
+                      border: `1px solid ${active ? BORDERS.blue : '#e5e7eb'}`,
+                    }}
                   >
-                    <div className="text-base font-semibold text-gray-900">
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
                       {i.display_name || '(no name provided)'}
                     </div>
-                    <div className="text-base text-gray-800">{i.email}</div>
+                    <div style={{ fontSize: 13, color: '#374151' }}>{i.email}</div>
                     {i.last_login_at && (
-                      <div className="text-sm text-gray-700">
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                         Last signed in {new Date(i.last_login_at).toLocaleString()}
                       </div>
                     )}
@@ -191,127 +249,125 @@ export default function AdminLinkingPanel() {
               })}
             </div>
           )}
-        </section>
+        </div>
 
-        {/* RIGHT: what to do */}
-        <section>
+        {/* RIGHT: action */}
+        <div style={card}>
           {!selected ? (
-            <div className="rounded-lg border border-dashed border-gray-400 p-6 text-base text-gray-800">
-              <div className="font-semibold text-gray-900">Step 1: choose a person</div>
-              <p className="mt-1">
-                Select someone from the list on the left. You will then be able to connect them
-                to an existing profile or create a new one.
-              </p>
+            <div style={{ padding: '32px 0', textAlign: 'center', color: '#6b7280', fontSize: 14 }}>
+              Select a person on the left to set up their access.
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="rounded-lg bg-blue-50 p-3 text-base text-blue-950">
-                Setting up access for{' '}
-                <strong>{selected.display_name || selected.email}</strong>
-                {selected.display_name && selected.email ? ` (${selected.email})` : ''}
-              </div>
-
-              {/* Option A */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Option A: Connect to an existing profile
-                </h3>
-                <p className="mt-1 mb-2 text-base text-gray-800">
-                  Use this if the person already has a profile in the dashboard (for example,
-                  from the roster) that is not connected to an Emory sign-in. Profiles that
-                  match their name or email are marked <strong>Suggested</strong>, but please
-                  confirm it is really the same person before connecting.
-                </p>
-                <input
-                  className={`${input} mb-2`}
-                  placeholder="Search by name, username, or role"
-                  value={filter}
-                  onChange={e => setFilter(e.target.value)}
-                />
-                <div className="max-h-64 space-y-2 overflow-y-auto">
-                  {visibleUsers.length === 0 ? (
-                    <div className="text-base text-gray-800">
-                      No unconnected profiles match. You can create a new one below.
-                    </div>
-                  ) : visibleUsers.map(u => (
-                    <div
-                      key={u.user_id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-gray-300 bg-white p-3"
-                    >
-                      <div>
-                        <div className="text-base font-semibold text-gray-900">
-                          {fullName(u)}{' '}
-                          <span className="font-normal capitalize text-gray-800">· {u.role}</span>
-                          {isSuggested(u) && (
-                            <span className="ml-2 rounded bg-green-100 px-2 py-0.5 text-sm font-semibold text-green-900">
-                              Suggested
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-gray-700">
-                          Username: {u.username}{u.email ? ` · ${u.email}` : ''}
-                        </div>
-                      </div>
-                      <button
-                        disabled={busy}
-                        onClick={() => link(u)}
-                        className="rounded-md bg-blue-700 px-3 py-2 text-base font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
-                      >
-                        Connect
-                      </button>
-                    </div>
-                  ))}
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>Setting up access for</div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: '#111827' }}>
+                    {selected.display_name || selected.email}
+                  </div>
+                  {selected.display_name && selected.email && (
+                    <div style={{ fontSize: 13, color: '#4b5563' }}>{selected.email}</div>
+                  )}
                 </div>
-              </div>
-
-              {/* Option B */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Option B: Create a new profile
-                </h3>
-                <p className="mt-1 mb-3 text-base text-gray-800">
-                  Use this if the person is new and has no profile yet. A profile is created
-                  with the role you choose and connected to their Emory sign-in. There is no
-                  separate password, because they sign in with Emory.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className={label}>First name</label>
-                    <input className={input} value={form.first_name}
-                      onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className={label}>Last name</label>
-                    <input className={input} value={form.last_name}
-                      onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className={label}>Username</label>
-                    <input className={input} value={form.username}
-                      onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className={label}>Role</label>
-                    <select className={input} value={form.role}
-                      onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-                      <option value="trainee">Trainee</option>
-                      <option value="attending">Attending</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
-                </div>
-                <p className="mt-2 text-base text-gray-800">{ROLE_HELP[form.role]}</p>
                 <button
-                  disabled={busy}
-                  onClick={create}
-                  className="mt-3 rounded-md bg-blue-700 px-4 py-2 text-base font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
+                  onClick={() => setSelected(null)}
+                  style={{ background: 'transparent', border: '1px solid #e5e7eb', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 13, color: '#6b7280', fontFamily: 'inherit' }}
                 >
-                  Create profile and connect
+                  Cancel
                 </button>
               </div>
-            </div>
+
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                {tabBtn('connect', 'Connect existing profile')}
+                {tabBtn('create', 'Create new profile')}
+              </div>
+
+              {tab === 'connect' ? (
+                <>
+                  <p style={{ ...hint, marginTop: 0 }}>
+                    For people who already have a profile (for example, from the roster).
+                    “Suggested” matches by name or email, so confirm it’s the same person.
+                  </p>
+                  <input
+                    style={{ ...inputStyle, marginBottom: 10 }}
+                    placeholder="Search by name, username, or role"
+                    value={filter}
+                    onChange={e => setFilter(e.target.value)}
+                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto' }}>
+                    {visibleUsers.length === 0 ? (
+                      <div style={{ padding: '16px 0', textAlign: 'center', color: '#6b7280', fontSize: 14 }}>
+                        No unconnected profiles match. Try “Create new profile.”
+                      </div>
+                    ) : visibleUsers.map(u => (
+                      <div
+                        key={u.user_id}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', border: '1px solid #e5e7eb', borderRadius: 8 }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>
+                            {fullName(u)}{' '}
+                            <span style={{ fontWeight: 400, color: '#4b5563', textTransform: 'capitalize' }}>· {u.role}</span>
+                            {isSuggested(u) && (
+                              <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: COLORS.green, color: '#1a5c30', border: `1px solid ${BORDERS.green}` }}>
+                                Suggested
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, color: '#6b7280' }}>
+                            {u.username}{u.email ? ` · ${u.email}` : ''}
+                          </div>
+                        </div>
+                        <button
+                          disabled={busy}
+                          onClick={() => link(u)}
+                          style={{ ...primaryBtn, opacity: busy ? 0.5 : 1, flexShrink: 0 }}
+                        >
+                          Connect
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p style={{ ...hint, marginTop: 0 }}>
+                    For new people with no profile. No password is needed since they sign in
+                    with Emory.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <label style={labelStyle}>First name
+                      <input style={{ ...inputStyle, marginTop: 4 }} value={form.first_name}
+                        onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} />
+                    </label>
+                    <label style={labelStyle}>Last name
+                      <input style={{ ...inputStyle, marginTop: 4 }} value={form.last_name}
+                        onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))} />
+                    </label>
+                    <label style={labelStyle}>Username
+                      <input style={{ ...inputStyle, marginTop: 4 }} value={form.username}
+                        onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
+                    </label>
+                    <label style={labelStyle}>Role
+                      <select style={{ ...inputStyle, marginTop: 4 }} value={form.role}
+                        onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+                        <option value="trainee">Trainee</option>
+                        <option value="attending">Attending</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p style={{ fontSize: 13, color: '#4b5563', margin: '8px 0 12px 0' }}>{ROLE_HELP[form.role]}</p>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button disabled={busy} onClick={create} style={{ ...primaryBtn, opacity: busy ? 0.5 : 1 }}>
+                      {busy ? 'Saving…' : 'Create profile and connect'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </>
           )}
-        </section>
+        </div>
       </div>
     </div>
   );

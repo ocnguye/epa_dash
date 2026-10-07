@@ -13,70 +13,53 @@ export default async function AccountLinkingPage() {
 
   return (
     <main
-      className="min-h-screen px-4 py-8 text-gray-900"
-      style={{ background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)' }}
+      style={{
+        minHeight: '100vh',
+        padding: 20,
+        boxSizing: 'border-box',
+        background: 'linear-gradient(135deg, #c8ceee 30%, #a7abde 100%)',
+        fontFamily: 'Ubuntu, sans-serif',
+        color: '#111827',
+      }}
     >
-      <div className="mx-auto max-w-5xl space-y-4">
+      <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {/* Header */}
-        <div className="rounded-2xl bg-white p-6 shadow">
-          <Link href="/select-account" className="text-sm font-medium text-blue-700 hover:underline">
+        <div style={{ background: '#fff', borderRadius: 16, padding: '20px 24px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+          <Link href="/select-account" style={{ fontSize: 13, fontWeight: 600, color: '#374151', textDecoration: 'none' }}>
             ← Switch dashboard
           </Link>
-          <h1 className="mt-2 text-3xl font-bold text-gray-900">Account Linking</h1>
-          <p className="mt-2 text-base text-gray-800">
-            Use this tool to give new people access to the dashboard. Assign roles and create
-            user profiles for Emory users who have signed in but do not have a profile yet, or
-            connect them to a profile that already exists.
-          </p>
-        </div>
-
-        {/* Plain-language explainer */}
-        <div className="rounded-2xl bg-white p-6 shadow">
-          <h2 className="text-xl font-semibold text-gray-900">How this works</h2>
-          <p className="mt-2 text-base text-gray-800">
-            Everyone signs in with their Emory login (this is called <strong>SSO</strong>, or
-            single sign-on). Signing in proves who they are, but it does not decide what they
-            can see. What they can see depends on their <strong>profile</strong>, which has a
-            role. A person is only let into the dashboard once their Emory sign-in is
-            connected to at least one profile.
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: '#000', margin: '6px 0 4px 0' }}>Account Linking</h1>
+          <p style={{ fontSize: 15, color: '#374151', margin: 0 }}>
+            Assign roles and create user profiles for Emory users who have signed in to the
+            dashboard but can’t see anything yet.
           </p>
 
-          <ol className="mt-4 list-decimal space-y-2 pl-6 text-base text-gray-800">
-            <li>
-              A new person signs in with Emory for the first time. If we cannot match them
-              automatically, they see a message that their account is not set up yet, and they
-              appear in the <strong>“Awaiting profile setup”</strong> list below.
-            </li>
-            <li>
-              You select that person and either <strong>connect them to an existing
-              profile</strong> or <strong>create a new profile</strong> with a role.
-            </li>
-            <li>
-              The next time they sign in with Emory, they will see the dashboard (or
-              dashboards) that match their profile.
-            </li>
-          </ol>
-
-          <h3 className="mt-5 text-lg font-semibold text-gray-900">What the roles mean</h3>
-          <ul className="mt-2 space-y-1 text-base text-gray-800">
-            <li><strong>Trainee:</strong> sees their own EPA scores and reports.</li>
-            <li><strong>Attending:</strong> sees the trainees and reports they work with.</li>
-            <li>
-              <strong>Admin:</strong> sees program-wide data and can use this tool. Only give
-              this to people who should be able to grant access to others.
-            </li>
-          </ul>
-
-          <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-base text-amber-900">
-            One person can have more than one profile (for example, a trainee who is also an
-            admin). Connect each profile separately. Every change you make here is recorded.
-          </p>
+          <details style={{ marginTop: 10 }}>
+            <summary style={{ cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#374151' }}>
+              How this works
+            </summary>
+            <div style={{ fontSize: 14, color: '#374151', marginTop: 8, lineHeight: 1.5 }}>
+              <p style={{ margin: '0 0 6px 0' }}>
+                People sign in with their Emory login (<strong>SSO</strong>). That proves who they
+                are, but access comes from a <strong>profile</strong> with a role. Until an Emory
+                sign-in is connected to a profile, the person sees “account not set up.”
+              </p>
+              <p style={{ margin: '0 0 6px 0' }}>
+                Pick a person below, then <strong>connect</strong> them to an existing profile or{' '}
+                <strong>create</strong> a new one. They get access the next time they sign in.
+              </p>
+              <p style={{ margin: 0 }}>
+                <strong>Trainee</strong>: own EPA scores and reports. <strong>Attending</strong>:
+                their trainees and reports. <strong>Admin</strong>: program-wide data and this
+                tool. One person can have several profiles, so connect each one separately.
+                Changes are logged.
+              </p>
+            </div>
+          </details>
         </div>
 
         {/* The tool */}
-        <div className="rounded-2xl bg-white p-6 shadow">
-          <AdminLinkingPanel />
-        </div>
+        <AdminLinkingPanel />
       </div>
     </main>
   );

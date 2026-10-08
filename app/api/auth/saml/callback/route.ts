@@ -106,6 +106,14 @@ export async function POST(req: NextRequest) {
       // Priority 1: email. One address can sit on several rows (one per role).
       if (email && process.env.SSO_AUTOLINK_EMAIL !== 'false') {
         cands = await findUnclaimedByEmail(email);
+
+        // DEBUG STATEMENTS
+        console.log('SSO EMAIL AUTOLINK:', {
+          email,
+          autolinkEnabled: process.env.SSO_AUTOLINK_EMAIL,
+          candidates: cands,
+          candidateCount: cands.length,
+        });
       }
       // Priority 2: username == uid (only works once Emory releases uid)
       if (cands.length === 0 && uid) {
